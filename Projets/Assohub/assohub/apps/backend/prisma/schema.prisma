@@ -1,11 +1,11 @@
 generator client {
-  provider   = "prisma-client-js"
-  engineType = "library"
+  provider        = "prisma-client-js"
+  engineType      = "library"
+  previewFeatures = ["driverAdapters"]
 }
 
 datasource db {
   provider = "sqlite"
-  url      = "file:./dev.db"
 }
 
 model Association {
@@ -157,6 +157,7 @@ model Document {
 }
 
 enum Role {
+  SUPER_ADMIN
   ADMIN
   TREASURER
   SECRETARY

@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
@@ -11,7 +11,8 @@ import {
     FileText,
     Settings,
     LogOut,
-    Hexagon
+    Hexagon,
+    ShieldCheck
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -26,6 +27,18 @@ const menuItems = [
 export function Sidebar() {
     const pathname = usePathname();
     const router = useRouter();
+    const [user, setUser] = useState<any>(null);
+
+    useEffect(() => {
+        const userData = localStorage.getItem("assohub_user");
+        if (userData) {
+            try {
+                setUser(JSON.parse(userData));
+            } catch (e) {
+                console.error("Failed to parse user data", e);
+            }
+        }
+    }, []);
 
     const handleLogout = () => {
         localStorage.clear();
@@ -69,6 +82,28 @@ export function Sidebar() {
                         </Link>
                     );
                 })}
+
+                {/* Super Admin Section */}
+                {user?.role === "SUPER_ADMIN" && (
+                    <div className="pt-4 space-y-2">
+                        <p className="px-4 text-[10px] font-bold text-white/30 uppercase tracking-[0.2em] mb-4">Plateforme</p>
+                        <Link
+                            href="/dashboard/super-admin"
+                            className={cn(
+                                "flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-300 group relative",
+                                pathname === "/dashboard/super-admin"
+                                    ? "bg-primary/20 text-white shadow-lg shadow-primary/10 border border-primary/20"
+                                    : "text-white/40 hover:text-white hover:bg-white/5"
+                            )}
+                        >
+                            <ShieldCheck size={20} className={cn(
+                                "transition-transform group-hover:scale-110 duration-300",
+                                pathname === "/dashboard/super-admin" ? "text-primary" : "text-white/20"
+                            )} />
+                            <span className="font-semibold text-primary/80">Admin Plateforme</span>
+                        </Link>
+                    </div>
+                )}
             </nav>
 
             {/* Footer / User Profile */}

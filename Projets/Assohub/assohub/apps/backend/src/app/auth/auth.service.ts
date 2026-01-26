@@ -85,7 +85,7 @@ export class AuthService {
         }
 
         // 2. Verify password
-        const isPasswordValid = await bcrypt.compare(dto.password as string, user.password_hash);
+        const isPasswordValid = await bcrypt.compare(dto.password, user.password_hash);
         if (!isPasswordValid) {
             throw new UnauthorizedException('Identifiants invalides.');
         }

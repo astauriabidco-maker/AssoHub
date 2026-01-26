@@ -6,6 +6,17 @@ import { UpdateAssociationDto } from './dto/update-association.dto';
 export class AssociationsService {
     constructor(private prisma: PrismaService) { }
 
+    async findAll() {
+        return this.prisma.association.findMany({
+            include: {
+                _count: {
+                    select: { users: true }
+                }
+            },
+            orderBy: { createdAt: 'desc' }
+        });
+    }
+
     async findOne(id: string) {
         const association = await this.prisma.association.findUnique({
             where: { id },
