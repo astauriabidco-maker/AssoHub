@@ -24,6 +24,14 @@ export class UsersController {
         return this.usersService.findAll(associationId);
     }
 
+    @Get(':id')
+    findOne(
+        @GetUser('associationId') associationId: string,
+        @Param('id') id: string,
+    ) {
+        return this.usersService.findOne(associationId, id);
+    }
+
     @Post()
     create(
         @GetUser('associationId') associationId: string,

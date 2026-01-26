@@ -1,15 +1,15 @@
 import * as dotenv from 'dotenv';
-import path from 'path';
 
-// Use absolute path to .env file
-dotenv.config({ path: '/Users/franklintchakounteu/.gemini/antigravity/scratch/Assohub/assohub/apps/backend/.env' });
+// Load .env from project root or current working directory
+dotenv.config();
 
-import { Logger } from '@nestjs/common';
+import { Logger, ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app/app.module';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+  app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
   const globalPrefix = 'api';
   app.setGlobalPrefix(globalPrefix);
   app.enableCors();

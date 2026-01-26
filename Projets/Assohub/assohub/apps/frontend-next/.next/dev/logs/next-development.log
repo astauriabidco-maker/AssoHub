@@ -1,0 +1,56 @@
+[00:38:57.245] Server  ERROR   ⨯ Error: Cannot find module 'next/dist/client/components/builtin/global-not-found'
+Require stack:
+- /Users/user/Documents/DEVELOPPEMENTS/Projets/Assohub/assohub/apps/frontend-next/node_modules/next/dist/server/dev/on-demand-entry-handler.js
+- /Users/user/Documents/DEVELOPPEMENTS/Projets/Assohub/assohub/apps/frontend-next/node_modules/next/dist/server/dev/hot-reloader-turbopack.js
+- /Users/user/Documents/DEVELOPPEMENTS/Projets/Assohub/assohub/apps/frontend-next/node_modules/next/dist/server/lib/router-utils/setup-dev-bundler.js
+- /Users/user/Documents/DEVELOPPEMENTS/Projets/Assohub/assohub/apps/frontend-next/node_modules/next/dist/server/lib/router-server.js
+- /Users/user/Documents/DEVELOPPEMENTS/Projets/Assohub/assohub/apps/frontend-next/node_modules/next/dist/server/lib/start-server.js
+[00:39:01.902] Server  ERROR   Error: Cannot find module 'next/dist/pages/_error'
+Require stack:
+- /Users/user/Documents/DEVELOPPEMENTS/Projets/Assohub/assohub/apps/frontend-next/node_modules/next/dist/server/dev/on-demand-entry-handler.js
+- /Users/user/Documents/DEVELOPPEMENTS/Projets/Assohub/assohub/apps/frontend-next/node_modules/next/dist/server/dev/hot-reloader-turbopack.js
+- /Users/user/Documents/DEVELOPPEMENTS/Projets/Assohub/assohub/apps/frontend-next/node_modules/next/dist/server/lib/router-utils/setup-dev-bundler.js
+- /Users/user/Documents/DEVELOPPEMENTS/Projets/Assohub/assohub/apps/frontend-next/node_modules/next/dist/server/lib/router-server.js
+- /Users/user/Documents/DEVELOPPEMENTS/Projets/Assohub/assohub/apps/frontend-next/node_modules/next/dist/server/lib/start-server.js
+[00:39:02.128] Server  ERROR   ⨯ Error: Cannot find module 'next/dist/pages/_error'
+Require stack:
+- /Users/user/Documents/DEVELOPPEMENTS/Projets/Assohub/assohub/apps/frontend-next/node_modules/next/dist/server/dev/on-demand-entry-handler.js
+- /Users/user/Documents/DEVELOPPEMENTS/Projets/Assohub/assohub/apps/frontend-next/node_modules/next/dist/server/dev/hot-reloader-turbopack.js
+- /Users/user/Documents/DEVELOPPEMENTS/Projets/Assohub/assohub/apps/frontend-next/node_modules/next/dist/server/lib/router-utils/setup-dev-bundler.js
+- /Users/user/Documents/DEVELOPPEMENTS/Projets/Assohub/assohub/apps/frontend-next/node_modules/next/dist/server/lib/router-server.js
+- /Users/user/Documents/DEVELOPPEMENTS/Projets/Assohub/assohub/apps/frontend-next/node_modules/next/dist/server/lib/start-server.js
+[00:39:02.180] Server  ERROR   Error: Cannot find module 'next/dist/pages/_error'
+Require stack:
+- /Users/user/Documents/DEVELOPPEMENTS/Projets/Assohub/assohub/apps/frontend-next/node_modules/next/dist/server/dev/on-demand-entry-handler.js
+- /Users/user/Documents/DEVELOPPEMENTS/Projets/Assohub/assohub/apps/frontend-next/node_modules/next/dist/server/dev/hot-reloader-turbopack.js
+- /Users/user/Documents/DEVELOPPEMENTS/Projets/Assohub/assohub/apps/frontend-next/node_modules/next/dist/server/lib/router-utils/setup-dev-bundler.js
+- /Users/user/Documents/DEVELOPPEMENTS/Projets/Assohub/assohub/apps/frontend-next/node_modules/next/dist/server/lib/router-server.js
+- /Users/user/Documents/DEVELOPPEMENTS/Projets/Assohub/assohub/apps/frontend-next/node_modules/next/dist/server/lib/start-server.js
+[00:39:02.762] Server  ERROR   ⨯ Error: Cannot find module 'next/dist/client/components/builtin/global-not-found'
+Require stack:
+- /Users/user/Documents/DEVELOPPEMENTS/Projets/Assohub/assohub/apps/frontend-next/node_modules/next/dist/server/dev/on-demand-entry-handler.js
+- /Users/user/Documents/DEVELOPPEMENTS/Projets/Assohub/assohub/apps/frontend-next/node_modules/next/dist/server/dev/hot-reloader-turbopack.js
+- /Users/user/Documents/DEVELOPPEMENTS/Projets/Assohub/assohub/apps/frontend-next/node_modules/next/dist/server/lib/router-utils/setup-dev-bundler.js
+- /Users/user/Documents/DEVELOPPEMENTS/Projets/Assohub/assohub/apps/frontend-next/node_modules/next/dist/server/lib/router-server.js
+- /Users/user/Documents/DEVELOPPEMENTS/Projets/Assohub/assohub/apps/frontend-next/node_modules/next/dist/server/lib/start-server.js
+[00:39:03.014] Server  ERROR   Error: Cannot find module 'next/dist/pages/_error'
+Require stack:
+- /Users/user/Documents/DEVELOPPEMENTS/Projets/Assohub/assohub/apps/frontend-next/node_modules/next/dist/server/dev/on-demand-entry-handler.js
+- /Users/user/Documents/DEVELOPPEMENTS/Projets/Assohub/assohub/apps/frontend-next/node_modules/next/dist/server/dev/hot-reloader-turbopack.js
+- /Users/user/Documents/DEVELOPPEMENTS/Projets/Assohub/assohub/apps/frontend-next/node_modules/next/dist/server/lib/router-utils/setup-dev-bundler.js
+- /Users/user/Documents/DEVELOPPEMENTS/Projets/Assohub/assohub/apps/frontend-next/node_modules/next/dist/server/lib/router-server.js
+- /Users/user/Documents/DEVELOPPEMENTS/Projets/Assohub/assohub/apps/frontend-next/node_modules/next/dist/server/lib/start-server.js
+[00:39:03.080] Server  ERROR   ⨯ Error: Cannot find module 'next/dist/pages/_error'
+Require stack:
+- /Users/user/Documents/DEVELOPPEMENTS/Projets/Assohub/assohub/apps/frontend-next/node_modules/next/dist/server/dev/on-demand-entry-handler.js
+- /Users/user/Documents/DEVELOPPEMENTS/Projets/Assohub/assohub/apps/frontend-next/node_modules/next/dist/server/dev/hot-reloader-turbopack.js
+- /Users/user/Documents/DEVELOPPEMENTS/Projets/Assohub/assohub/apps/frontend-next/node_modules/next/dist/server/lib/router-utils/setup-dev-bundler.js
+- /Users/user/Documents/DEVELOPPEMENTS/Projets/Assohub/assohub/apps/frontend-next/node_modules/next/dist/server/lib/router-server.js
+- /Users/user/Documents/DEVELOPPEMENTS/Projets/Assohub/assohub/apps/frontend-next/node_modules/next/dist/server/lib/start-server.js
+[00:39:03.158] Server  ERROR   Error: Cannot find module 'next/dist/pages/_error'
+Require stack:
+- /Users/user/Documents/DEVELOPPEMENTS/Projets/Assohub/assohub/apps/frontend-next/node_modules/next/dist/server/dev/on-demand-entry-handler.js
+- /Users/user/Documents/DEVELOPPEMENTS/Projets/Assohub/assohub/apps/frontend-next/node_modules/next/dist/server/dev/hot-reloader-turbopack.js
+- /Users/user/Documents/DEVELOPPEMENTS/Projets/Assohub/assohub/apps/frontend-next/node_modules/next/dist/server/lib/router-utils/setup-dev-bundler.js
+- /Users/user/Documents/DEVELOPPEMENTS/Projets/Assohub/assohub/apps/frontend-next/node_modules/next/dist/server/lib/router-server.js
+- /Users/user/Documents/DEVELOPPEMENTS/Projets/Assohub/assohub/apps/frontend-next/node_modules/next/dist/server/lib/start-server.js

@@ -1,0 +1,33 @@
+PrismaClientKnownRequestError: 
+Invalid `prisma.association.create()` invocation in
+/Users/user/Documents/DEVELOPPEMENTS/Projets/Assohub/assohub/apps/backend/prisma/seed.js:12:50
+
+   9 async function main() {
+  10     const passwordHash = await bcrypt.hash('admin123', 10);
+  11 
+→ 12     const association = await prisma.association.create(
+The column `slogan` does not exist in the current database.
+    at qr.handleRequestError (/Users/user/Documents/DEVELOPPEMENTS/Projets/Assohub/assohub/node_modules/@prisma/client/runtime/client.js:65:8172)
+    at qr.handleAndLogRequestError (/Users/user/Documents/DEVELOPPEMENTS/Projets/Assohub/assohub/node_modules/@prisma/client/runtime/client.js:65:7467)
+    at qr.request (/Users/user/Documents/DEVELOPPEMENTS/Projets/Assohub/assohub/node_modules/@prisma/client/runtime/client.js:65:7174)
+    at async a (/Users/user/Documents/DEVELOPPEMENTS/Projets/Assohub/assohub/node_modules/@prisma/client/runtime/client.js:75:5816)
+    at async main (/Users/user/Documents/DEVELOPPEMENTS/Projets/Assohub/assohub/apps/backend/prisma/seed.js:12:25) {
+  code: 'P2022',
+  meta: {
+    modelName: 'Association',
+    driverAdapterError: DriverAdapterError: ColumnNotFound
+        at PrismaBetterSqlite3Adapter.onError (/Users/user/Documents/DEVELOPPEMENTS/Projets/Assohub/assohub/node_modules/@prisma/adapter-better-sqlite3/dist/index.js:568:11)
+        at PrismaBetterSqlite3Adapter.performIO (/Users/user/Documents/DEVELOPPEMENTS/Projets/Assohub/assohub/node_modules/@prisma/adapter-better-sqlite3/dist/index.js:563:12)
+        at PrismaBetterSqlite3Adapter.queryRaw (/Users/user/Documents/DEVELOPPEMENTS/Projets/Assohub/assohub/node_modules/@prisma/adapter-better-sqlite3/dist/index.js:504:63)
+        at /Users/user/Documents/DEVELOPPEMENTS/Projets/Assohub/assohub/node_modules/@prisma/client/runtime/client.js:11:42301
+        at /Users/user/Documents/DEVELOPPEMENTS/Projets/Assohub/assohub/node_modules/@prisma/client/runtime/client.js:11:24337
+        at Object.runInChildSpan (/Users/user/Documents/DEVELOPPEMENTS/Projets/Assohub/assohub/node_modules/@prisma/client/runtime/client.js:65:2516)
+        at ti.runInChildSpan (/Users/user/Documents/DEVELOPPEMENTS/Projets/Assohub/assohub/node_modules/@prisma/client/runtime/client.js:65:2850)
+        at fr (/Users/user/Documents/DEVELOPPEMENTS/Projets/Assohub/assohub/node_modules/@prisma/client/runtime/client.js:11:24178)
+        at #d (/Users/user/Documents/DEVELOPPEMENTS/Projets/Assohub/assohub/node_modules/@prisma/client/runtime/client.js:11:45525)
+        at e.interpretNode (/Users/user/Documents/DEVELOPPEMENTS/Projets/Assohub/assohub/node_modules/@prisma/client/runtime/client.js:11:42290) {
+      cause: [Object]
+    }
+  },
+  clientVersion: '7.2.0'
+}

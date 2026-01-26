@@ -26,6 +26,29 @@ export class UsersService {
         });
     }
 
+    async findOne(associationId: string, id: string) {
+        const user = await this.prisma.user.findFirst({
+            where: { id, associationId },
+            include: {
+                fees: {
+                    include: {
+                        campaign: true,
+                    },
+                    orderBy: {
+                        createdAt: 'desc',
+                    },
+                },
+            },
+        });
+
+        if (!user) {
+            throw new NotFoundException('Utilisateur non trouvé.');
+        }
+
+        const { password_hash, ...result } = user;
+        return result;
+    }
+
     async create(associationId: string, dto: CreateUserDto) {
         const existingUser = await this.prisma.user.findFirst({
             where: {
