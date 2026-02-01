@@ -6,6 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import {
     LayoutDashboard,
     Users,
+    Users2,
     Wallet,
     Calendar,
     FileText,
@@ -19,6 +20,7 @@ import { cn } from "@/lib/utils";
 const menuItems = [
     { label: "Dashboard", icon: LayoutDashboard, href: "/dashboard" },
     { label: "Membres", icon: Users, href: "/dashboard/members" },
+    { label: "Groupes", icon: Users2, href: "/dashboard/groups" },
     { label: "Finance", icon: Wallet, href: "/dashboard/finance" },
     { label: "Événements", icon: Calendar, href: "/dashboard/events" },
     { label: "Documents", icon: FileText, href: "/dashboard/documents" },

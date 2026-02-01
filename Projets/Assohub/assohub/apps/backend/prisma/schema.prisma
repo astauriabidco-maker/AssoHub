@@ -10,6 +10,7 @@ datasource db {
 
 model Association {
   id             String        @id @default(uuid())
+  slug           String?       @unique
   name           String
   slogan         String?
   description    String?
@@ -26,6 +27,7 @@ model Association {
   is_active      Boolean       @default(true)
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
+  announcements  Announcement[]
   campaigns      Campaign[]
   documents      Document[]
   events         Event[]
@@ -46,19 +48,31 @@ model User {
   status             UserStatus          @default(ACTIVE)
   createdAt          DateTime            @default(now())
   updatedAt          DateTime            @updatedAt
+  announcements      Announcement[]
   eventRegistrations EventRegistration[]
   fees               Fee[]
   ledGroups          Group[]             @relation("GroupLeader")
   association        Association         @relation(fields: [associationId], references: [id])
   memberOfGroups     Group[]             @relation("GroupMembers")
+  history            MemberHistory[]
 
   @@unique([email, associationId])
+}
+
+model MemberHistory {
+  id          String   @id @default(uuid())
+  userId      String
+  action      String
+  description String?
+  createdAt   DateTime @default(now())
+  user        User     @relation(fields: [userId], references: [id])
 }
 
 model Group {
   id            String      @id @default(uuid())
   associationId String
   name          String
+  description   String?
   leaderId      String?
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
@@ -102,6 +116,8 @@ model Transaction {
   amount          Float
   type            TransactionType
   description     String?
+  category        String?
+  paymentMethod   String?
   date            DateTime        @default(now())
   feeId           String?         @unique
   proofDocumentId String?         @unique
@@ -159,8 +175,10 @@ model Document {
 enum Role {
   SUPER_ADMIN
   ADMIN
-  TREASURER
+  PRESIDENT
+  VICE_PRESIDENT
   SECRETARY
+  TREASURER
   MEMBER
 }
 
@@ -193,4 +211,15 @@ enum AccessLevel {
   PUBLIC
   MEMBERS_ONLY
   ADMIN_ONLY
+}
+
+model Announcement {
+  id            String      @id @default(uuid())
+  associationId String
+  title         String
+  content       String
+  authorId      String
+  createdAt     DateTime    @default(now())
+  association   Association @relation(fields: [associationId], references: [id])
+  author        User        @relation(fields: [authorId], references: [id])
 }

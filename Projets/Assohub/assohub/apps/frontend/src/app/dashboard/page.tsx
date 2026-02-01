@@ -9,9 +9,10 @@ import {
     ArrowDownRight,
     Activity,
     Wallet,
-    CheckCircle2,
-    Clock,
-    AlertCircle
+    Megaphone,
+    Plus,
+    X,
+    Loader2
 } from "lucide-react";
 import {
     AreaChart,
@@ -42,23 +43,71 @@ interface StatsData {
     activities: { id: string; type: string; message: string; date: string }[];
 }
 
+interface Announcement {
+    id: string;
+    title: string;
+    content: string;
+    createdAt: string;
+    author: {
+        id: string;
+        firstName: string | null;
+        lastName: string | null;
+    };
+}
+
 export default function DashboardPage() {
     const [stats, setStats] = useState<StatsData | null>(null);
+    const [announcements, setAnnouncements] = useState<Announcement[]>([]);
     const [loading, setLoading] = useState(true);
+    const [isAdmin, setIsAdmin] = useState(false);
+    const [isModalOpen, setIsModalOpen] = useState(false);
+    const [submitting, setSubmitting] = useState(false);
+    const [formData, setFormData] = useState({ title: "", content: "" });
 
     useEffect(() => {
-        const fetchStats = async () => {
+        const fetchData = async () => {
             try {
-                const data = await apiFetch("/stats/global");
-                setStats(data);
+                const [statsData, announcementsData] = await Promise.all([
+                    apiFetch("/stats/global"),
+                    apiFetch("/communication/announcements").catch(() => [])
+                ]);
+                setStats(statsData);
+                setAnnouncements(announcementsData.slice(0, 3));
+
+                // Check role from token
+                const token = localStorage.getItem("token");
+                if (token) {
+                    try {
+                        const payload = JSON.parse(atob(token.split(".")[1]));
+                        setIsAdmin(["ADMIN", "PRESIDENT"].includes(payload.role));
+                    } catch { }
+                }
             } catch (error) {
-                console.error("Failed to fetch dashboard stats:", error);
+                console.error("Failed to fetch dashboard data:", error);
             } finally {
                 setLoading(false);
             }
         };
-        fetchStats();
+        fetchData();
     }, []);
+
+    const handleCreateAnnouncement = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setSubmitting(true);
+        try {
+            const newAnnouncement = await apiFetch("/communication/announcements", {
+                method: "POST",
+                body: JSON.stringify(formData),
+            });
+            setAnnouncements([newAnnouncement, ...announcements].slice(0, 3));
+            setIsModalOpen(false);
+            setFormData({ title: "", content: "" });
+        } catch (error) {
+            console.error("Failed to create announcement:", error);
+        } finally {
+            setSubmitting(false);
+        }
+    };
 
     if (loading) {
         return (
@@ -110,6 +159,47 @@ export default function DashboardPage() {
 
     return (
         <div className="p-8 space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-1000">
+            {/* Announcements Section */}
+            <GlassCard className="p-6 border-l-4 border-l-primary">
+                <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-3">
+                        <div className="p-2 bg-primary/10 rounded-lg text-primary">
+                            <Megaphone size={20} />
+                        </div>
+                        <h3 className="text-lg font-bold text-white">📢 Dernières Annonces</h3>
+                    </div>
+                    {isAdmin && (
+                        <button
+                            onClick={() => setIsModalOpen(true)}
+                            className="flex items-center gap-2 px-4 py-2 bg-primary hover:bg-primary/90 text-white font-semibold rounded-lg text-sm transition-all"
+                        >
+                            <Plus size={16} />
+                            Publier une annonce
+                        </button>
+                    )}
+                </div>
+
+                {announcements.length === 0 ? (
+                    <p className="text-white/40 text-center py-6 italic">Aucune annonce pour le moment.</p>
+                ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        {announcements.map((announcement) => (
+                            <div
+                                key={announcement.id}
+                                className="bg-white/5 rounded-xl p-4 border border-white/10 hover:border-primary/30 transition-all"
+                            >
+                                <h4 className="text-white font-semibold mb-2 line-clamp-1">{announcement.title}</h4>
+                                <p className="text-white/60 text-sm line-clamp-3 mb-3">{announcement.content}</p>
+                                <div className="flex items-center justify-between text-xs text-white/40">
+                                    <span>{announcement.author.firstName} {announcement.author.lastName}</span>
+                                    <span>{new Date(announcement.createdAt).toLocaleDateString("fr-FR")}</span>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </GlassCard>
+
             {/* KPI Section */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 {cards.map((card, i) => (
@@ -294,6 +384,55 @@ export default function DashboardPage() {
                     )}
                 </div>
             </GlassCard>
+
+            {/* Modal Création Annonce */}
+            {isModalOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+                    <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setIsModalOpen(false)} />
+                    <div className="relative bg-slate-900 border border-white/10 rounded-2xl p-8 w-full max-w-lg">
+                        <button
+                            onClick={() => setIsModalOpen(false)}
+                            className="absolute top-4 right-4 text-white/50 hover:text-white"
+                        >
+                            <X size={24} />
+                        </button>
+
+                        <h3 className="text-2xl font-bold text-white mb-6">Publier une annonce</h3>
+                        <form onSubmit={handleCreateAnnouncement} className="space-y-4">
+                            <div>
+                                <label className="text-xs font-semibold text-white/60 uppercase">Titre</label>
+                                <input
+                                    type="text"
+                                    required
+                                    placeholder="Ex: Rappel Assemblée Générale"
+                                    className="w-full mt-1 bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-primary/50"
+                                    value={formData.title}
+                                    onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+                                />
+                            </div>
+                            <div>
+                                <label className="text-xs font-semibold text-white/60 uppercase">Contenu</label>
+                                <textarea
+                                    required
+                                    rows={4}
+                                    placeholder="Écrivez votre message ici..."
+                                    className="w-full mt-1 bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-primary/50 resize-none"
+                                    value={formData.content}
+                                    onChange={(e) => setFormData({ ...formData, content: e.target.value })}
+                                />
+                            </div>
+                            <button
+                                type="submit"
+                                disabled={submitting}
+                                className="w-full py-3 bg-primary hover:bg-primary/90 text-white font-bold rounded-xl flex items-center justify-center gap-2"
+                            >
+                                {submitting && <Loader2 size={18} className="animate-spin" />}
+                                Publier l'annonce
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

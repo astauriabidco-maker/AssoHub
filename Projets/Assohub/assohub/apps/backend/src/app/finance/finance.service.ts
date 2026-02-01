@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateCampaignDto } from './dto/create-campaign.dto';
+import { CreateExpenseDto } from './dto/create-expense.dto';
 
 @Injectable()
 export class FinanceService {
@@ -117,4 +118,81 @@ export class FinanceService {
             },
         });
     }
+
+    async createExpense(associationId: string, dto: CreateExpenseDto) {
+        return this.prisma.transaction.create({
+            data: {
+                associationId,
+                amount: -Math.abs(dto.amount), // Store as negative for expenses
+                type: 'EXPENSE',
+                description: dto.description,
+                category: dto.category,
+                paymentMethod: dto.paymentMethod,
+                date: new Date(dto.date),
+            },
+        });
+    }
+
+    async getLedger(associationId: string) {
+        const transactions = await this.prisma.transaction.findMany({
+            where: { associationId },
+            orderBy: { date: 'desc' },
+        });
+
+        // Calculate running balance
+        const sortedByDateAsc = [...transactions].sort(
+            (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
+        );
+
+        let runningBalance = 0;
+        const balanceMap = new Map<string, number>();
+
+        for (const tx of sortedByDateAsc) {
+            runningBalance += tx.amount;
+            balanceMap.set(tx.id, runningBalance);
+        }
+
+        const currentBalance = runningBalance;
+
+        const ledger = transactions.map((tx) => ({
+            ...tx,
+            balance: balanceMap.get(tx.id) || 0,
+        }));
+
+        return {
+            transactions: ledger,
+            currentBalance,
+        };
+    }
+
+    async getExpenses(associationId: string) {
+        return this.prisma.transaction.findMany({
+            where: {
+                associationId,
+                type: 'EXPENSE',
+            },
+            orderBy: { date: 'desc' },
+        });
+    }
+
+    async exportCsv(associationId: string): Promise<string> {
+        const transactions = await this.prisma.transaction.findMany({
+            where: { associationId },
+            orderBy: { date: 'desc' },
+        });
+
+        const headers = ['Date', 'Type', 'Catégorie', 'Description', 'Montant', 'Méthode'];
+        const rows = transactions.map((tx) => [
+            new Date(tx.date).toLocaleDateString('fr-FR'),
+            tx.type === 'INCOME' ? 'Recette' : 'Dépense',
+            tx.category || '',
+            tx.description || '',
+            tx.amount.toFixed(2),
+            tx.paymentMethod || '',
+        ]);
+
+        const csv = [headers.join(';'), ...rows.map((row) => row.join(';'))].join('\n');
+        return csv;
+    }
 }
+

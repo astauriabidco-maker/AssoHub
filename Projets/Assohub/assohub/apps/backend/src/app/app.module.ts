@@ -11,6 +11,10 @@ import { EventsModule } from './events/events.module';
 import { DocumentsModule } from './documents/documents.module';
 import { StatsModule } from './stats/stats.module';
 import { AssociationsModule } from './associations/associations.module';
+import { GroupsModule } from './groups/groups.module';
+import { PublicModule } from './public/public.module';
+import { CommunicationModule } from './communication/communication.module';
+import { SuperAdminModule } from './super-admin/super-admin.module';
 
 @Module({
   imports: [
@@ -26,6 +30,10 @@ import { AssociationsModule } from './associations/associations.module';
     DocumentsModule,
     StatsModule,
     AssociationsModule,
+    GroupsModule,
+    PublicModule,
+    CommunicationModule,
+    SuperAdminModule,
   ],
   controllers: [AppController],
   providers: [AppService],

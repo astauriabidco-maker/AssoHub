@@ -23,7 +23,7 @@ export class AssociationsService {
             include: {
                 users: {
                     where: {
-                        role: { in: ['ADMIN', 'TREASURER'] },
+                        role: { in: ['PRESIDENT', 'VICE_PRESIDENT', 'TREASURER'] },
                     },
                     select: {
                         id: true,

@@ -43,7 +43,7 @@ export class AuthService {
                     firstName: dto.adminFirstName,
                     lastName: dto.adminLastName,
                     phone: dto.phone,
-                    role: 'ADMIN',
+                    role: 'PRESIDENT',
                     status: 'ACTIVE',
                 },
             });
