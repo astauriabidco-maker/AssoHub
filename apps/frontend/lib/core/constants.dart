@@ -1,3 +1,3 @@
 class AppConstants {
-  static const String baseUrl = 'http://localhost:3000/api';
+  static const String baseUrl = 'http://localhost:3333/api';
 }

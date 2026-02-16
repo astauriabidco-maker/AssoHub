@@ -1,8 +1,7 @@
 export class RegisterDto {
     associationName: string;
-    adminEmail: string;
-    adminPassword: string;
-    adminFirstName?: string;
-    adminLastName?: string;
-    phone?: string;
+    email: string;
+    password: string;
+    firstName?: string;
+    lastName?: string;
 }

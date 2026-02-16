@@ -1,8 +1,6 @@
-import { Role } from '@prisma/client';
-
 export class CreateUserDto {
     email: string;
     firstName?: string;
     lastName?: string;
-    role?: Role;
+    role?: string; // SUPER_ADMIN, ADMIN, TREASURER, SECRETARY, MEMBER
 }

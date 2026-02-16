@@ -3,6 +3,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import * as bcrypt from 'bcrypt';
+import * as crypto from 'crypto';
 
 @Injectable()
 export class UsersService {
@@ -10,9 +11,44 @@ export class UsersService {
 
     async findAll(associationId: string) {
         return this.prisma.user.findMany({
-            where: {
+            where: { associationId },
+            select: {
+                id: true,
+                email: true,
+                firstName: true,
+                lastName: true,
+                role: true,
+                status: true,
+                createdAt: true,
+            },
+            orderBy: { createdAt: 'desc' },
+        });
+    }
+
+    async create(associationId: string, dto: CreateUserDto) {
+        const existingUser = await this.prisma.user.findFirst({
+            where: { email: dto.email, associationId },
+        });
+
+        if (existingUser) {
+            throw new ConflictException(
+                'Un utilisateur avec cet email existe déjà dans votre association.',
+            );
+        }
+
+        // Random temporary password
+        const tempPassword = crypto.randomBytes(8).toString('hex');
+        const passwordHash = await bcrypt.hash(tempPassword, 10);
+
+        return this.prisma.user.create({
+            data: {
+                email: dto.email,
+                firstName: dto.firstName,
+                lastName: dto.lastName,
+                role: dto.role || 'MEMBER',
+                status: 'ACTIVE',
                 associationId,
-                status: { not: 'INACTIVE' },
+                password_hash: passwordHash,
             },
             select: {
                 id: true,
@@ -26,27 +62,22 @@ export class UsersService {
         });
     }
 
-    async create(associationId: string, dto: CreateUserDto) {
-        const existingUser = await this.prisma.user.findFirst({
-            where: {
-                email: dto.email,
-                associationId,
-            },
+    async updateStatus(
+        associationId: string,
+        id: string,
+        status: 'ACTIVE' | 'SUSPENDED',
+    ) {
+        const user = await this.prisma.user.findFirst({
+            where: { id, associationId },
         });
 
-        if (existingUser) {
-            throw new ConflictException('Un utilisateur avec cet email existe déjà dans votre association.');
+        if (!user) {
+            throw new NotFoundException('Utilisateur non trouvé.');
         }
 
-        const defaultPassword = 'ChangeMe123!';
-        const passwordHash = await bcrypt.hash(defaultPassword, 10);
-
-        return this.prisma.user.create({
-            data: {
-                ...dto,
-                associationId,
-                password_hash: passwordHash,
-            },
+        return this.prisma.user.update({
+            where: { id },
+            data: { status },
             select: {
                 id: true,
                 email: true,
@@ -54,6 +85,7 @@ export class UsersService {
                 lastName: true,
                 role: true,
                 status: true,
+                createdAt: true,
             },
         });
     }

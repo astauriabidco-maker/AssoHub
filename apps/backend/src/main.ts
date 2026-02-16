@@ -1,8 +1,8 @@
 import * as dotenv from 'dotenv';
 import path from 'path';
 
-// Use absolute path to .env file
-dotenv.config({ path: '/Users/franklintchakounteu/.gemini/antigravity/scratch/Assohub/assohub/apps/backend/.env' });
+// Load .env file from the backend app root
+dotenv.config({ path: path.resolve(process.cwd(), 'apps/backend/.env') });
 
 import { Logger } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
