@@ -50,12 +50,21 @@ export class AuthService {
         // 3. Hash password
         const passwordHash = await bcrypt.hash(dto.password, 10);
 
+        const associationType = dto.associationType || 'OTHER';
+
         // 4. Transaction: Create Association + Admin User
         const result = await this.prisma.$transaction(async (tx) => {
             const association = await tx.association.create({
                 data: {
                     name: dto.associationName,
                     slug,
+                    type: associationType,
+                    // Contextual fields for FAMILY type
+                    ...(associationType === 'FAMILY' ? {
+                        origin_village: dto.originVillage || null,
+                        origin_region: dto.originRegion || null,
+                        chieftaincy: dto.chieftaincy || null,
+                    } : {}),
                 },
             });
 
@@ -74,8 +83,8 @@ export class AuthService {
             return { association, user };
         });
 
-        // 5. Seed default roles for the new association
-        await this.rolesService.seedDefaultRoles(result.association.id);
+        // 5. Seed default roles adapted to association type
+        await this.rolesService.seedDefaultRoles(result.association.id, associationType);
 
         // 6. Get permissions for the ADMIN role
         const permissions = await this.rolesService.getPermissionsForRole(
@@ -105,6 +114,7 @@ export class AuthService {
                 id: result.association.id,
                 name: result.association.name,
                 slug: result.association.slug,
+                type: result.association.type,
             },
         };
     }
@@ -154,6 +164,7 @@ export class AuthService {
                 id: user.association.id,
                 name: user.association.name,
                 slug: user.association.slug,
+                type: user.association.type,
             },
         };
     }

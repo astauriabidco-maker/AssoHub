@@ -7,6 +7,25 @@ import { CreateExpenseDto } from './dto/create-expense.dto';
 export class FinanceService {
     constructor(private prisma: PrismaService) { }
 
+    // ── Helper: compute campaign stats (shared by list/detail/global) ──
+    private computeCampaignStats(campaign: { amount: number; fees: { status: string }[] }) {
+        const totalFees = campaign.fees.length;
+        const paidFees = campaign.fees.filter((f) => f.status === 'PAID').length;
+        const overdueFees = campaign.fees.filter((f) => f.status === 'OVERDUE').length;
+        const pendingFees = totalFees - paidFees - overdueFees;
+        const totalExpected = totalFees * campaign.amount;
+        const totalCollected = paidFees * campaign.amount;
+        return {
+            totalMembers: totalFees,
+            paidMembers: paidFees,
+            overdueFees,
+            pendingFees,
+            totalExpected,
+            totalCollected,
+            progress: totalFees > 0 ? Math.round((paidFees / totalFees) * 100) : 0,
+        };
+    }
+
     // ── Helper: recursively collect all descendant association IDs ──
     private async getAllDescendantIds(parentId: string): Promise<string[]> {
         const children = await this.prisma.association.findMany({
@@ -116,27 +135,16 @@ export class FinanceService {
             },
         });
 
-        return campaigns.map((c) => {
-            const totalFees = c.fees.length;
-            const paidFees = c.fees.filter((f) => f.status === 'PAID').length;
-            const totalExpected = totalFees * c.amount;
-            const totalCollected = paidFees * c.amount;
-
-            return {
-                id: c.id,
-                name: c.name,
-                description: c.description,
-                amount: c.amount,
-                due_date: c.due_date,
-                scope: c.scope,
-                createdAt: c.createdAt,
-                totalMembers: totalFees,
-                paidMembers: paidFees,
-                totalExpected,
-                totalCollected,
-                progress: totalFees > 0 ? Math.round((paidFees / totalFees) * 100) : 0,
-            };
-        });
+        return campaigns.map((c) => ({
+            id: c.id,
+            name: c.name,
+            description: c.description,
+            amount: c.amount,
+            due_date: c.due_date,
+            scope: c.scope,
+            createdAt: c.createdAt,
+            ...this.computeCampaignStats(c),
+        }));
     }
 
     // ── CAMPAIGN DETAIL WITH ALL FEES & MEMBER/BRANCH INFO ──
@@ -177,11 +185,6 @@ export class FinanceService {
             throw new NotFoundException('Campagne non trouvée.');
         }
 
-        const totalFees = campaign.fees.length;
-        const paidFees = campaign.fees.filter((f) => f.status === 'PAID').length;
-        const totalExpected = totalFees * campaign.amount;
-        const totalCollected = paidFees * campaign.amount;
-
         return {
             id: campaign.id,
             name: campaign.name,
@@ -190,11 +193,7 @@ export class FinanceService {
             due_date: campaign.due_date,
             scope: campaign.scope,
             createdAt: campaign.createdAt,
-            totalMembers: totalFees,
-            paidMembers: paidFees,
-            totalExpected,
-            totalCollected,
-            progress: totalFees > 0 ? Math.round((paidFees / totalFees) * 100) : 0,
+            ...this.computeCampaignStats(campaign),
             fees: campaign.fees.map((f) => ({
                 id: f.id,
                 status: f.status,
@@ -209,7 +208,7 @@ export class FinanceService {
     }
 
     // ── PAY A FEE (MARK AS PAID + CREATE TRANSACTION) ──
-    async payFee(associationId: string, feeId: string) {
+    async payFee(associationId: string, feeId: string, paymentMethod?: string) {
         // 1. Find the fee and ensure it belongs to this association's campaign
         const fee = await this.prisma.fee.findFirst({
             where: { id: feeId },
@@ -228,33 +227,28 @@ export class FinanceService {
             throw new BadRequestException('Cette cotisation est déjà payée.');
         }
 
-        // 2. Create transaction + update fee in a transaction
-        const [transaction] = await this.prisma.$transaction([
-            // Create the INCOME transaction
-            this.prisma.transaction.create({
+        // 2. Create transaction + update fee in a single atomic transaction
+        const result = await this.prisma.$transaction(async (tx) => {
+            const transaction = await tx.transaction.create({
                 data: {
                     associationId,
                     amount: fee.campaign.amount,
                     type: 'INCOME',
                     category: 'COTISATION',
-                    paymentMethod: 'CASH',
+                    paymentMethod: paymentMethod || 'CASH',
                     description: `Paiement — ${fee.campaign.name}`,
                 },
-            }),
-            // Update the fee to PAID
-            this.prisma.fee.update({
-                where: { id: feeId },
-                data: { status: 'PAID' },
-            }),
-        ]);
+            });
 
-        // 3. Link the transaction to the fee
-        await this.prisma.fee.update({
-            where: { id: feeId },
-            data: { transactionId: transaction.id },
+            await tx.fee.update({
+                where: { id: feeId },
+                data: { status: 'PAID', transactionId: transaction.id },
+            });
+
+            return transaction;
         });
 
-        return { success: true, feeId, transactionId: transaction.id };
+        return { success: true, feeId, transactionId: result.id };
     }
 
     // ── GLOBAL FINANCE STATS ──
@@ -270,10 +264,9 @@ export class FinanceService {
         let totalCollected = 0;
 
         for (const c of campaigns) {
-            const total = c.fees.length * c.amount;
-            const paid = c.fees.filter((f) => f.status === 'PAID').length * c.amount;
-            totalExpected += total;
-            totalCollected += paid;
+            const stats = this.computeCampaignStats(c);
+            totalExpected += stats.totalExpected;
+            totalCollected += stats.totalCollected;
         }
 
         return {
@@ -281,6 +274,71 @@ export class FinanceService {
             totalCollected,
             remaining: totalExpected - totalCollected,
         };
+    }
+
+    // ── FEES FOR A SPECIFIC USER ──
+    async findFeesForUser(associationId: string, userId: string) {
+        const fees = await this.prisma.fee.findMany({
+            where: { userId },
+            include: {
+                campaign: {
+                    select: {
+                        associationId: true,
+                        name: true,
+                        amount: true,
+                        due_date: true,
+                    },
+                },
+            },
+            orderBy: { createdAt: 'desc' },
+        });
+
+        // Only return fees whose campaign belongs to this association
+        return fees
+            .filter((f) => f.campaign.associationId === associationId)
+            .map((f) => ({
+                id: f.id,
+                label: f.campaign.name,
+                amount: f.campaign.amount,
+                status: f.status,
+                dueDate: f.campaign.due_date,
+                paidAt: f.status === 'PAID' ? f.updatedAt : null,
+            }));
+    }
+
+    // ── MEMBER FINANCE SUMMARY (for member list badges) ──
+    async getMemberFinanceSummary(associationId: string) {
+        const fees = await this.prisma.fee.findMany({
+            where: {
+                campaign: { associationId },
+                userId: { not: null },
+            },
+            select: {
+                userId: true,
+                status: true,
+            },
+        });
+
+        // Group by userId
+        const summaryMap = new Map<string, { total: number; paid: number; pending: number; overdue: number }>();
+
+        for (const f of fees) {
+            if (!f.userId) continue;
+            const entry = summaryMap.get(f.userId) || { total: 0, paid: 0, pending: 0, overdue: 0 };
+            entry.total++;
+            if (f.status === 'PAID') entry.paid++;
+            else if (f.status === 'OVERDUE') entry.overdue++;
+            else entry.pending++;
+            summaryMap.set(f.userId, entry);
+        }
+
+        // Convert to array
+        const result: Record<string, { total: number; paid: number; pending: number; overdue: number }> = {};
+        for (const [userId, entry] of summaryMap) {
+            result[userId] = entry;
+        }
+
+        return result;
     }
 
     // ── CREATE EXPENSE TRANSACTION ──

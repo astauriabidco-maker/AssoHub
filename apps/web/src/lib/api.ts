@@ -1,4 +1,5 @@
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3333/api";
+export const BASE_URL = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:3333/api").replace(/\/api$/, "");
+export const API_URL = `${BASE_URL}/api`;
 
 function getToken(): string | null {
     if (typeof window === "undefined") return null;

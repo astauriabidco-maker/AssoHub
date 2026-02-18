@@ -6,6 +6,7 @@ import {
     Patch,
     Param,
     Delete,
+    Query,
     UseGuards,
 } from '@nestjs/common';
 import { UsersService } from './users.service';
@@ -23,8 +24,16 @@ export class UsersController {
 
     @Get()
     @Permissions('members.view')
-    findAll(@GetUser('associationId') associationId: string) {
-        return this.usersService.findAll(associationId);
+    findAll(
+        @GetUser('associationId') associationId: string,
+        @Query('page') page?: string,
+        @Query('limit') limit?: string,
+    ) {
+        return this.usersService.findAll(
+            associationId,
+            page ? parseInt(page, 10) : 1,
+            limit ? Math.min(parseInt(limit, 10), 500) : 50,
+        );
     }
 
     @Post()

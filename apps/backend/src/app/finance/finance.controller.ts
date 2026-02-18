@@ -27,6 +27,23 @@ export class FinanceController {
         return this.financeService.getGlobalStats(associationId);
     }
 
+    // ── Résumé financier par membre (badges liste) ──
+    @Get('members-summary')
+    @Permissions('finance.view')
+    getMembersSummary(@GetUser('associationId') associationId: string) {
+        return this.financeService.getMemberFinanceSummary(associationId);
+    }
+
+    // ── Cotisations d'un membre ──
+    @Get('fees/user/:userId')
+    @Permissions('finance.view')
+    getFeesForUser(
+        @GetUser('associationId') associationId: string,
+        @Param('userId') userId: string,
+    ) {
+        return this.financeService.findFeesForUser(associationId, userId);
+    }
+
     // ── Créer une campagne (+ auto-générer les dettes) ──
     @Post('campaigns')
     @Permissions('finance.edit')
@@ -60,8 +77,9 @@ export class FinanceController {
     payFee(
         @GetUser('associationId') associationId: string,
         @Param('id') id: string,
+        @Body() body: { paymentMethod?: string },
     ) {
-        return this.financeService.payFee(associationId, id);
+        return this.financeService.payFee(associationId, id, body?.paymentMethod);
     }
 
     // ── Saisir une dépense ──

@@ -16,6 +16,9 @@ import {
     ShieldAlert,
     Shield,
     Network,
+    GitBranch,
+    BookOpen,
+    CreditCard,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 
@@ -23,7 +26,8 @@ interface NavItem {
     href: string;
     label: string;
     icon: React.ComponentType<{ className?: string }>;
-    permission?: string; // permission key required to see this item
+    permission?: string;
+    familyOnly?: boolean;
 }
 
 const allNavItems: NavItem[] = [
@@ -32,10 +36,14 @@ const allNavItems: NavItem[] = [
     { href: "/dashboard/groups", label: "Groupes", icon: FolderOpen, permission: "groups.view" },
     { href: "/dashboard/finance", label: "Finances", icon: Wallet, permission: "finance.view" },
     { href: "/dashboard/events", label: "Événements", icon: CalendarDays, permission: "events.view" },
+    { href: "/dashboard/documents", label: "Documents", icon: FolderOpen, permission: "events.view" },
+    { href: "/dashboard/directory", label: "Annuaire", icon: BookOpen, permission: "members.view" },
     { href: "/dashboard/network", label: "Réseau", icon: Network, permission: "settings.manage" },
+    { href: "/dashboard/wallet", label: "Portefeuille", icon: CreditCard },
     { href: "/dashboard/profile", label: "Mon Espace", icon: UserCircle },
     { href: "/dashboard/settings", label: "Paramètres", icon: Settings, permission: "settings.manage" },
     { href: "/dashboard/settings/roles", label: "Rôles", icon: Shield, permission: "roles.manage" },
+    { href: "/dashboard/family-tree", label: "Arbre Familial", icon: GitBranch, permission: "members.view", familyOnly: true },
 ];
 
 export default function DashboardLayout({
@@ -48,6 +56,7 @@ export default function DashboardLayout({
     const searchParams = useSearchParams();
     const [toast, setToast] = useState("");
     const [associationName, setAssociationName] = useState("");
+    const [associationType, setAssociationType] = useState("");
 
     useEffect(() => {
         try {
@@ -55,6 +64,7 @@ export default function DashboardLayout({
             if (raw) {
                 const a = JSON.parse(raw);
                 setAssociationName(a.name || "");
+                setAssociationType(a.type || "");
             }
         } catch { /* ignored */ }
     }, []);
@@ -72,7 +82,11 @@ export default function DashboardLayout({
     if (loading || !user) return null;
 
     const visibleNavItems = allNavItems.filter(
-        (item) => !item.permission || hasPermission(item.permission)
+        (item) => {
+            if (item.permission && !hasPermission(item.permission)) return false;
+            if (item.familyOnly && associationType !== "FAMILY") return false;
+            return true;
+        }
     );
 
     const initials =

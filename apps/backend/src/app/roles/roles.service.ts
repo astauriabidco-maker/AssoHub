@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException, ConflictException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { getRolesForType } from '../config/association-presets';
 
 // All available permission keys
 export const ALL_PERMISSIONS = [
@@ -16,64 +17,16 @@ export const ALL_PERMISSIONS = [
     { key: 'roles.manage', label: 'Gérer les rôles', group: 'Administration' },
 ];
 
-// Default roles seeded on association creation
-const DEFAULT_ROLES = [
-    {
-        name: 'Administrateur',
-        slug: 'ADMIN',
-        color: '#8b5cf6',
-        isSystem: true,
-        permissions: ALL_PERMISSIONS.map((p) => p.key),
-    },
-    {
-        name: 'Président',
-        slug: 'PRESIDENT',
-        color: '#10b981',
-        isSystem: true,
-        permissions: [
-            'dashboard.view', 'members.view', 'members.edit',
-            'groups.view', 'groups.edit', 'finance.view', 'finance.edit',
-            'events.view', 'events.edit', 'settings.manage',
-        ],
-    },
-    {
-        name: 'Trésorier',
-        slug: 'TREASURER',
-        color: '#f59e0b',
-        isSystem: false,
-        permissions: [
-            'dashboard.view', 'finance.view', 'finance.edit',
-            'members.view', 'events.view', 'groups.view',
-        ],
-    },
-    {
-        name: 'Secrétaire',
-        slug: 'SECRETARY',
-        color: '#06b6d4',
-        isSystem: false,
-        permissions: [
-            'dashboard.view', 'members.view', 'members.edit',
-            'groups.view', 'groups.edit', 'events.view', 'events.edit',
-        ],
-    },
-    {
-        name: 'Membre',
-        slug: 'MEMBER',
-        color: '#3b82f6',
-        isSystem: true,
-        permissions: ['dashboard.view', 'groups.view', 'events.view'],
-    },
-];
-
 @Injectable()
 export class RolesService {
     constructor(private prisma: PrismaService) { }
 
     /**
-     * Seed default roles for a new association (called from AuthService)
+     * Seed default roles for a new association, adapted to association type
      */
-    async seedDefaultRoles(associationId: string) {
-        for (const role of DEFAULT_ROLES) {
+    async seedDefaultRoles(associationId: string, associationType: string = 'OTHER') {
+        const roles = getRolesForType(associationType);
+        for (const role of roles) {
             await this.prisma.role.create({
                 data: {
                     associationId,

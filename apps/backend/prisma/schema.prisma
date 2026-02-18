@@ -16,6 +16,8 @@ model Association {
   id              String   @id @default(uuid())
   slug            String   @unique
   name            String
+  // Type: FAMILY, CULTURAL, SPORTS, POLITICAL, RELIGIOUS, OTHER
+  type            String   @default("OTHER")
   slogan          String?
   logo_url        String?
   address_street  String?
@@ -28,6 +30,11 @@ model Association {
   is_active       Boolean  @default(true)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
+
+  // Contextual fields (depending on type)
+  origin_village  String?  // FAMILY: village d'origine commun
+  origin_region   String?  // FAMILY: région / département
+  chieftaincy     String?  // FAMILY: chefferie d'appartenance
 
   // Hierarchy (Federation / Antennes)
   parentId        String?
@@ -45,6 +52,8 @@ model Association {
   documents     Document[]
   announcements Announcement[]
   branchFees    Fee[]          @relation("BranchFees")
+  familyLinks   FamilyLink[]
+  skills        Skill[]
 }
 
 // ─────────────────────────────────────────────────
@@ -81,11 +90,30 @@ model User {
   lastName      String?
   phone         String?
   avatar_url    String?
+  gender        String?       // MALE, FEMALE, OTHER
+  isVirtual     Boolean  @default(false) // Fantôme (ancêtre non-inscrit)
+
+  // Enriched profile
+  residence_city    String?   // Ville de résidence actuelle
+  residence_country String?   // Pays de résidence (CM, FR, BE, CA...)
+  family_branch     String?   // Concession / branche familiale (contexte FAMILY)
+  birth_date        DateTime? // Date de naissance
+  membership_date   DateTime? // Date d'adhésion officielle
 
   // Roles: SUPER_ADMIN, ADMIN, TREASURER, SECRETARY, MEMBER
   role   String @default("MEMBER")
   // Status: ACTIVE, PENDING, SUSPENDED
   status String @default("PENDING")
+
+  // Professional profile
+  professionalStatus    String?   // STUDENT, EMPLOYED, SELF_EMPLOYED, CIVIL_SERVANT, RETIRED, UNEMPLOYED
+  jobTitle              String?   // Intitulé du poste
+  industrySector        String?   // HEALTH, TECH, CONSTRUCTION, EDUCATION, COMMERCE, AGRICULTURE, LEGAL, FINANCE, TRANSPORT, ARTS, OTHER
+  employer              String?   // Nom de l'employeur
+  educationLevel        String?   // BAC, LICENCE, MASTER, DOCTORATE, VOCATIONAL, NONE
+  fieldOfStudy          String?   // Domaine d'études
+  availableForMentoring Boolean   @default(false)
+  profileVisibility     String    @default("MEMBERS") // PRIVATE, MEMBERS, PUBLIC
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -97,8 +125,62 @@ model User {
   eventRegistrations EventRegistration[]
   memberHistory      MemberHistory[]
   announcements      Announcement[]
+  familyLinksFrom    FamilyLink[]    @relation("FamilyLinksFrom")
+  familyLinksTo      FamilyLink[]    @relation("FamilyLinksTo")
+  skills             UserSkill[]
+  wallet             Wallet?
+
 
   @@unique([email, associationId])
+}
+
+// ─────────────────────────────────────────────────
+// 2c. SKILL (Compétences)
+// ─────────────────────────────────────────────────
+model Skill {
+  id            String      @id @default(uuid())
+  associationId String
+  association   Association @relation(fields: [associationId], references: [id])
+  name          String
+  category      String?     // TECHNICAL, LANGUAGE, SOFT_SKILL, TRADE, OTHER
+  users         UserSkill[]
+  createdAt     DateTime    @default(now())
+
+  @@unique([name, associationId])
+}
+
+model UserSkill {
+  id      String  @id @default(uuid())
+  userId  String
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  skillId String
+  skill   Skill   @relation(fields: [skillId], references: [id], onDelete: Cascade)
+  level   String? // BEGINNER, INTERMEDIATE, EXPERT
+
+  @@unique([userId, skillId])
+}
+
+// ─────────────────────────────────────────────────
+// 2b. FAMILY LINK (Arbre Généalogique)
+// ─────────────────────────────────────────────────
+model FamilyLink {
+  id             String      @id @default(uuid())
+  associationId  String
+  association    Association @relation(fields: [associationId], references: [id])
+
+  fromUserId     String
+  fromUser       User        @relation("FamilyLinksFrom", fields: [fromUserId], references: [id])
+
+  toUserId       String
+  toUser         User        @relation("FamilyLinksTo", fields: [toUserId], references: [id])
+
+  // PARENT: fromUser est parent de toUser
+  // SPOUSE: fromUser est conjoint de toUser
+  relationType   String      // "PARENT" | "SPOUSE"
+
+  createdAt      DateTime    @default(now())
+
+  @@unique([fromUserId, toUserId, relationType])
 }
 
 // ─────────────────────────────────────────────────
@@ -225,10 +307,13 @@ model Event {
   location    String?
   start_date  DateTime
   end_date    DateTime?
+  // Type: MEETING, AG, PARTY
+  type        String   @default("MEETING")
   is_paid     Boolean   @default(false)
   price       Float?
 
   registrations EventRegistration[]
+  documents     Document[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -244,12 +329,14 @@ model EventRegistration {
   userId  String
   user    User   @relation(fields: [userId], references: [id])
 
-  // Status: REGISTERED, ATTENDED, CANCELLED
-  status   String  @default("REGISTERED")
+  // Status: ATTENDING, ABSENT, PENDING
+  status   String  @default("ATTENDING")
   has_paid Boolean @default(false)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@unique([eventId, userId])
 }
 
 // ─────────────────────────────────────────────────
@@ -261,11 +348,15 @@ model Document {
   association   Association @relation(fields: [associationId], references: [id])
 
   name         String
-  file_path    String
-  // Category: AG_REPORT, INVOICE, STATUTS, RECEIPT, OTHER
+  file_url     String
+  // Category: STATUTES, MEETING_MINUTES, INVOICE, ADMINISTRATIVE, OTHER
   category     String @default("OTHER")
   // AccessLevel: PUBLIC, MEMBERS_ONLY, ADMIN_ONLY
-  access_level String @default("ADMIN_ONLY")
+  access_level String @default("MEMBERS_ONLY")
+
+  // Optional link to an event (e.g. minutes for an AG)
+  eventId      String?
+  event        Event? @relation(fields: [eventId], references: [id])
 
   transaction Transaction?
 
@@ -289,4 +380,47 @@ model Announcement {
   scope    String @default("LOCAL") // LOCAL = this association only, NETWORK = broadcast to all children
 
   createdAt DateTime @default(now())
+}
+
+// ─────────────────────────────────────────────────
+// 12. WALLET (Portfolio Membre)
+// ─────────────────────────────────────────────────
+model Wallet {
+  id            String      @id @default(uuid())
+  userId        String      @unique
+  user          User        @relation(fields: [userId], references: [id])
+  
+  balance       Float       @default(0.0)
+  currency      String      @default("XAF")
+  status        String      @default("ACTIVE") // ACTIVE, FROZEN, CLOSED
+
+  transactions  WalletTransaction[]
+
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+}
+
+// ─────────────────────────────────────────────────
+// 13. WALLET TRANSACTION
+// ─────────────────────────────────────────────────
+model WalletTransaction {
+  id            String      @id @default(uuid())
+  walletId      String
+  wallet        Wallet      @relation(fields: [walletId], references: [id])
+
+  amount        Float       // Positive (credit) or negative (debit)
+  
+  // Type: DEPOSIT (top-up), WITHDRAWAL, PAYMENT (fee payment), TRANSFER (p2p), ADJUSTMENT (admin)
+  type          String
+  
+  // Status: PENDING, COMPLETED, FAILED, CANCELLED
+  status        String      @default("COMPLETED")
+  
+  reference     String?     // External ref (MOMO txn id) or internal ref
+  description   String?
+  
+  // Optional link to a Fee (if payment)
+  feeId         String?
+  
+  createdAt     DateTime    @default(now())
 }
