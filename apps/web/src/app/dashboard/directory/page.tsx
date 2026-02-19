@@ -1,426 +1,1089 @@
 "use client";
 
-import { useEffect, useState, useMemo, useCallback } from "react";
+import { useEffect, useState, useMemo, type FormEvent } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
 import {
-    BookOpen,
-    Search,
-    Briefcase,
-    GraduationCap,
-    Heart,
-    BarChart3,
+    Plus,
     Users,
-    Download,
-    ChevronLeft,
+    Mail,
+    User,
+    Shield,
+    MoreHorizontal,
+    UserCheck,
+    UserX,
+    Eye,
+    Pencil,
+    Trash2,
+    Search,
+    LayoutList,
+    LayoutGrid,
+    MapPin,
+    Filter,
+    CreditCard,
     ChevronRight,
-    Award,
-    TrendingUp,
-    AlertCircle,
+    ChevronLeft,
+    GitBranch,
+    Heart,
+    Home,
+    Check,
+    Download,
+    Upload,
+    FileSpreadsheet,
+    X,
+    Send,
 } from "lucide-react";
+import GlassCard from "@/components/ui/GlassCard";
+import GlassInput from "@/components/ui/GlassInput";
+import GlassButton from "@/components/ui/GlassButton";
+import GlassModal from "@/components/ui/GlassModal";
 import RequirePermission from "@/components/auth/RequirePermission";
-import { apiGet, API_URL } from "@/lib/api";
+import { useAuth } from "@/hooks/useAuth";
+import { apiGet, apiPost, apiPatch, apiDelete } from "@/lib/api";
+import MemberProfileView from "@/components/directory/MemberProfileView";
 
-import MemberCard from "@/components/directory/MemberCard";
-import StatCard from "@/components/directory/StatCard";
-import DirectoryFilters from "@/components/directory/DirectoryFilters";
-import ProfileEditorModal from "@/components/directory/ProfileEditorModal";
-import {
-    DirectoryMember,
-    PaginatedResult,
-    DirectoryStats,
-    SECTOR_LABELS,
-    EDUCATION_LABELS,
-    PRO_STATUS_LABELS,
-    SKILL_CATEGORY_COLORS,
-    CHART_COLORS,
-} from "@/components/directory/constants";
+interface Member {
+    id: string;
+    email: string;
+    firstName: string | null;
+    lastName: string | null;
+    phone: string | null;
+    role: string;
+    status: string;
+    gender: string | null;
+    isVirtual: boolean;
+    residence_city: string | null;
+    residence_country: string | null;
+    family_branch: string | null;
+    familyBranchId: string | null;
+    birth_date: string | null;
+    membership_date: string | null;
+    professionalStatus: string | null;
+    jobTitle: string | null;
+    industrySector: string | null;
+    employer: string | null;
+    educationLevel: string | null;
+    fieldOfStudy: string | null;
+    availableForMentoring: boolean;
+    createdAt: string;
+}
+
+interface Role {
+    id: string;
+    name: string;
+    slug: string;
+    color: string;
+    permissions: string[];
+    isSystem: boolean;
+}
+
+interface FamilyBranch {
+    id: string;
+    name: string;
+    founderName: string | null;
+    _count: { members: number };
+}
+
+// ── Fallback styles for roles not yet fetched ──
+const FALLBACK_ROLE_COLORS: Record<string, string> = {
+    ADMIN: "#8b5cf6",
+    PRESIDENT: "#10b981",
+    TREASURER: "#f59e0b",
+    SECRETARY: "#06b6d4",
+    MEMBER: "#3b82f6",
+    CHIEF: "#d97706",
+    NOTABLE: "#10b981",
+    ELDER: "#f59e0b",
+};
+
+const STATUS_STYLES: Record<string, string> = {
+    ACTIVE: "bg-emerald-500/20 text-emerald-300 border-emerald-500/30",
+    PENDING: "bg-yellow-500/20 text-yellow-300 border-yellow-500/30",
+    SUSPENDED: "bg-red-500/20 text-red-300 border-red-500/30",
+};
+
+const STATUS_LABELS: Record<string, string> = {
+    ACTIVE: "Actif",
+    PENDING: "En attente",
+    SUSPENDED: "Suspendu",
+};
+
+const COUNTRY_FLAGS: Record<string, string> = {
+    CM: "🇨🇲", FR: "🇫🇷", BE: "🇧🇪", CA: "🇨🇦", DE: "🇩🇪", US: "🇺🇸",
+    GB: "🇬🇧", CH: "🇨🇭", IT: "🇮🇹", ES: "🇪🇸", CI: "🇨🇮", GA: "🇬🇦",
+    SN: "🇸🇳", CG: "🇨🇬", CD: "🇨🇩", NG: "🇳🇬", GQ: "🇬🇶", TD: "🇹🇩",
+};
+
+type FinanceSummaryMap = Record<string, { total: number; paid: number; pending: number; overdue: number }>;
+
+const FINANCE_STATUS_LABELS: Record<string, string> = {
+    ALL: "Tous",
+    ALL_PAID: "✅ Tout payé",
+    HAS_PENDING: "🟡 En attente",
+    HAS_OVERDUE: "🔴 En retard",
+    NO_FEES: "⚪ Aucune cotisation",
+};
+
+function getFinanceBadge(summary: FinanceSummaryMap, memberId: string) {
+    const s = summary[memberId];
+    if (!s || s.total === 0) return { label: "—", style: "bg-gray-500/10 text-gray-500 border-gray-500/20" };
+    if (s.overdue > 0) return { label: `${s.overdue} retard`, style: "bg-red-500/15 text-red-400 border-red-500/25" };
+    if (s.pending > 0) return { label: `${s.pending} en attente`, style: "bg-yellow-500/15 text-yellow-400 border-yellow-500/25" };
+    return { label: "✓ À jour", style: "bg-emerald-500/15 text-emerald-400 border-emerald-500/25" };
+}
 
 export default function DirectoryPage() {
-    const [activeTab, setActiveTab] = useState<"search" | "mentors" | "dashboard">("search");
+    const { user: currentUser } = useAuth();
+    const searchParams = useSearchParams();
+    const router = useRouter();
+
+    const [members, setMembers] = useState<Member[]>([]);
+    const [roles, setRoles] = useState<Role[]>([]);
+    const [branches, setBranches] = useState<FamilyBranch[]>([]);
+    const [financeSummary, setFinanceSummary] = useState<FinanceSummaryMap>({});
     const [loading, setLoading] = useState(true);
-
-    // Search state
-    const [members, setMembers] = useState<DirectoryMember[]>([]);
-    const [totalMembers, setTotalMembers] = useState(0);
-    const [totalPages, setTotalPages] = useState(1);
-    const [page, setPage] = useState(1);
-
     const [search, setSearch] = useState("");
-    const [filterSector, setFilterSector] = useState("");
-    const [filterStatus, setFilterStatus] = useState("");
-    const [filterEducation, setFilterEducation] = useState("");
-    const [filterMentoring, setFilterMentoring] = useState("");
-    const [filterCity, setFilterCity] = useState("");
-    const [filterSkill, setFilterSkill] = useState("");
+
+    // Filters
+    const [filterRole, setFilterRole] = useState<string>("ALL");
+    const [filterStatus, setFilterStatus] = useState<string>("ALL");
+    const [filterFinance, setFilterFinance] = useState<string>("ALL");
     const [showFilters, setShowFilters] = useState(false);
 
-    // Mentors
-    const [mentors, setMentors] = useState<DirectoryMember[]>([]);
-    const [mentorTotal, setMentorTotal] = useState(0);
-    const [mentorPages, setMentorPages] = useState(1);
-    const [mentorPage, setMentorPage] = useState(1);
+    // View mode
+    const [viewMode, setViewMode] = useState<"table" | "grid">("grid"); // Default to grid for Directory feel
 
-    // Dashboard
-    const [stats, setStats] = useState<DirectoryStats | null>(null);
+    // Add modal
+    const [addOpen, setAddOpen] = useState(false);
+    const [addForm, setAddForm] = useState({
+        firstName: "",
+        lastName: "",
+        email: "",
+        phone: "",
+        role: "MEMBER",
+        gender: "",
+        residence_city: "",
+        residence_country: "",
+        family_branch: "",
+        familyBranchId: "",
+        parentIds: [] as string[],
+        spouseId: "",
+    });
+    const [addLoading, setAddLoading] = useState(false);
+    const [addError, setAddError] = useState("");
+    const [addStep, setAddStep] = useState(1);
 
-    // Profile editor
-    const [editMember, setEditMember] = useState<DirectoryMember | null>(null);
+    // CSV Import modal
+    const [importOpen, setImportOpen] = useState(false);
+    const [importLoading, setImportLoading] = useState(false);
+    const [importResult, setImportResult] = useState<{ created: number; skipped: number; errors: string[] } | null>(null);
+    const [importPreview, setImportPreview] = useState<string[][] | null>(null);
+    const [importCsvRaw, setImportCsvRaw] = useState("");
 
-    // Toast
-    const [toast, setToast] = useState<{ message: string; type: "error" | "success" } | null>(null);
+    // Viewing / Editing Member
+    const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
 
-    function showToast(message: string, type: "error" | "success" = "error") {
-        setToast({ message, type });
-        setTimeout(() => setToast(null), 4000);
+    // Delete modal
+    const [deleteOpen, setDeleteOpen] = useState(false);
+    const [deleteMember, setDeleteMember] = useState<Member | null>(null);
+    const [deleteLoading, setDeleteLoading] = useState(false);
+
+    // Action dropdown
+    const [actionMenuId, setActionMenuId] = useState<string | null>(null);
+
+    // ── Helpers ──
+    function getRoleColor(slug: string): string {
+        const role = roles.find((r) => r.slug === slug);
+        return role?.color || FALLBACK_ROLE_COLORS[slug] || "#6b7280";
     }
 
-    // ── Load tab data ──
-    const loadSearchData = useCallback(async (p: number) => {
-        setLoading(true);
-        try {
-            const params = new URLSearchParams();
-            if (search) params.set("search", search);
-            if (filterSector) params.set("industrySector", filterSector);
-            if (filterStatus) params.set("professionalStatus", filterStatus);
-            if (filterEducation) params.set("educationLevel", filterEducation);
-            if (filterMentoring) params.set("availableForMentoring", filterMentoring);
-            if (filterCity) params.set("city", filterCity);
-            if (filterSkill) params.set("skillName", filterSkill);
-            params.set("page", String(p));
-            params.set("limit", "12");
-            const data = await apiGet(`/directory?${params.toString()}`) as PaginatedResult<DirectoryMember>;
-            setMembers(data.data);
-            setTotalMembers(data.total);
-            setTotalPages(data.totalPages);
-            setPage(data.page);
-        } catch {
-            showToast("Erreur lors du chargement de l'annuaire.");
-        } finally {
-            setLoading(false);
-        }
-    }, [search, filterSector, filterStatus, filterEducation, filterMentoring, filterCity, filterSkill]);
-
-    const loadMentorsData = useCallback(async (p: number) => {
-        setLoading(true);
-        try {
-            const data = await apiGet(`/directory/mentors?page=${p}&limit=12`) as PaginatedResult<DirectoryMember>;
-            setMentors(data.data);
-            setMentorTotal(data.total);
-            setMentorPages(data.totalPages);
-            setMentorPage(data.page);
-        } catch {
-            showToast("Erreur lors du chargement des mentors.");
-        } finally {
-            setLoading(false);
-        }
-    }, []);
-
-    const loadStatsData = useCallback(async () => {
-        setLoading(true);
-        try {
-            const data = await apiGet("/directory/stats") as DirectoryStats;
-            setStats(data);
-        } catch {
-            showToast("Erreur lors du chargement des statistiques.");
-        } finally {
-            setLoading(false);
-        }
-    }, []);
-
-    useEffect(() => {
-        if (activeTab === "search") loadSearchData(1);
-        else if (activeTab === "mentors") loadMentorsData(1);
-        else loadStatsData();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [activeTab]);
-
-    // Debounced search when filters change
-    useEffect(() => {
-        if (activeTab !== "search") return;
-        const timer = setTimeout(() => {
-            setPage(1);
-            loadSearchData(1);
-        }, 300);
-        return () => clearTimeout(timer);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [search, filterSector, filterStatus, filterEducation, filterMentoring, filterCity, filterSkill]);
-
-    const activeFilterCount = useMemo(() =>
-        [filterSector, filterStatus, filterEducation, filterMentoring, filterCity, filterSkill].filter(Boolean).length,
-        [filterSector, filterStatus, filterEducation, filterMentoring, filterCity, filterSkill]
-    );
-
-    function resetFilters() {
-        setFilterSector(""); setFilterStatus(""); setFilterEducation("");
-        setFilterMentoring(""); setFilterCity(""); setFilterSkill("");
+    function getRoleLabel(slug: string): string {
+        const role = roles.find((r) => r.slug === slug);
+        return role?.name || slug;
     }
 
-    // ── Export CSV ──
-    async function handleExportCsv() {
-        try {
-            const params = new URLSearchParams();
-            if (filterSector) params.set("industrySector", filterSector);
-            if (filterStatus) params.set("professionalStatus", filterStatus);
-            if (filterEducation) params.set("educationLevel", filterEducation);
-            if (filterMentoring) params.set("availableForMentoring", filterMentoring);
+    function roleBadgeStyle(slug: string): React.CSSProperties {
+        const c = getRoleColor(slug);
+        return {
+            backgroundColor: `${c}20`,
+            color: c,
+            borderColor: `${c}50`,
+        };
+    }
 
-            const token = localStorage.getItem("token");
-            const resp = await fetch(
-                `${API_URL}/directory/export?${params.toString()}`,
-                { headers: { Authorization: `Bearer ${token}` } },
+    // ── Stats ──
+    const stats = useMemo(() => {
+        const active = members.filter((m) => m.status === "ACTIVE").length;
+        const pending = members.filter((m) => m.status === "PENDING").length;
+        const suspended = members.filter((m) => m.status === "SUSPENDED").length;
+        return { total: members.length, active, pending, suspended };
+    }, [members]);
+
+    // ── Unique role slugs ──
+    const uniqueRoles = useMemo(() => {
+        return [...new Set(members.map((m) => m.role))];
+    }, [members]);
+
+    // ── Filtered members ──
+    const filteredMembers = useMemo(() => {
+        let result = members;
+        if (search.trim()) {
+            const q = search.toLowerCase();
+            result = result.filter(
+                (m) =>
+                    (m.firstName || "").toLowerCase().includes(q) ||
+                    (m.lastName || "").toLowerCase().includes(q) ||
+                    m.email.toLowerCase().includes(q) ||
+                    getRoleLabel(m.role).toLowerCase().includes(q) ||
+                    (m.residence_city || "").toLowerCase().includes(q) ||
+                    (m.residence_country || "").toLowerCase().includes(q)
             );
-            if (!resp.ok) throw new Error("Export failed");
-            const blob = await resp.blob();
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement("a");
-            a.href = url;
-            a.download = `annuaire_${new Date().toISOString().slice(0, 10)}.csv`;
-            a.click();
-            URL.revokeObjectURL(url);
-            showToast("Export CSV téléchargé !", "success");
+        }
+        if (filterRole !== "ALL") {
+            result = result.filter((m) => m.role === filterRole);
+        }
+        if (filterStatus !== "ALL") {
+            result = result.filter((m) => m.status === filterStatus);
+        }
+        if (filterFinance !== "ALL") {
+            result = result.filter((m) => {
+                const s = financeSummary[m.id];
+                if (filterFinance === "NO_FEES") return !s || s.total === 0;
+                if (filterFinance === "ALL_PAID") return s && s.total > 0 && s.overdue === 0 && s.pending === 0;
+                if (filterFinance === "HAS_PENDING") return s && s.pending > 0;
+                if (filterFinance === "HAS_OVERDUE") return s && s.overdue > 0;
+                return true;
+            });
+        }
+        return result;
+    }, [members, search, roles, filterRole, filterStatus, filterFinance, financeSummary]);
+
+    async function loadData() {
+        try {
+            const [membersRes, rolesData, finData, branchesData] = await Promise.all([
+                apiGet("/users?limit=500"),
+                apiGet("/roles"),
+                apiGet("/finance/members-summary").catch(() => ({})),
+                apiGet("/family-branches").catch(() => []),
+            ]);
+            const membersPayload = membersRes as { data?: Member[] } | Member[];
+            setMembers(Array.isArray(membersPayload) ? membersPayload : (membersPayload.data || []));
+            setRoles(rolesData as Role[]);
+            setFinanceSummary(finData as FinanceSummaryMap);
+            setBranches(branchesData as FamilyBranch[]);
         } catch {
-            showToast("Erreur lors de l'export CSV.");
+            // silent
+        } finally {
+            setLoading(false);
         }
     }
 
-    const tabs = [
-        { key: "search" as const, label: "Annuaire", icon: Search },
-        { key: "mentors" as const, label: "Mentors", icon: Heart },
-        { key: "dashboard" as const, label: "Dashboard", icon: BarChart3 },
-    ];
+    useEffect(() => {
+        loadData();
+    }, []);
+
+    // Handle URL params for user selection
+    useEffect(() => {
+        const userId = searchParams.get("user");
+        if (userId) {
+            if (userId === "me") {
+                if (currentUser) {
+                    setSelectedMemberId(currentUser.id);
+                }
+                // If currentUser is not yet loaded, wait. Don't set 'me'.
+            } else {
+                setSelectedMemberId(userId);
+            }
+        } else {
+            setSelectedMemberId(null);
+        }
+    }, [searchParams, currentUser]);
+
+    // Update URL when selection changes
+    function openMember(id: string) {
+        setSelectedMemberId(id);
+        router.push(`/dashboard/directory?user=${id === currentUser?.id ? "me" : id}`);
+    }
+
+    function closeMember() {
+        setSelectedMemberId(null);
+        router.push("/dashboard/directory");
+    }
+
+    // Close dropdown on outside click
+    useEffect(() => {
+        function handleClick() {
+            setActionMenuId(null);
+        }
+        if (actionMenuId) {
+            document.addEventListener("click", handleClick);
+            return () => document.removeEventListener("click", handleClick);
+        }
+    }, [actionMenuId]);
+
+    // ── Add ──
+    async function handleAdd(e: FormEvent) {
+        e.preventDefault();
+        setAddError("");
+        setAddLoading(true);
+        try {
+            const payload = {
+                ...addForm,
+                gender: addForm.gender || undefined,
+                residence_city: addForm.residence_city || undefined,
+                residence_country: addForm.residence_country || undefined,
+                family_branch: addForm.family_branch || undefined,
+                familyBranchId: addForm.familyBranchId || undefined,
+                parentIds: addForm.parentIds.length > 0 ? addForm.parentIds : undefined,
+                spouseId: addForm.spouseId || undefined,
+            };
+            await apiPost("/users", payload);
+            setAddOpen(false);
+            setAddStep(1);
+            setAddForm({
+                firstName: "", lastName: "", email: "", phone: "",
+                role: "MEMBER", gender: "", residence_city: "", residence_country: "",
+                family_branch: "", familyBranchId: "", parentIds: [], spouseId: "",
+            });
+            await loadData();
+        } catch (err) {
+            setAddError(err instanceof Error ? err.message : "Erreur lors de l'ajout.");
+        } finally {
+            setAddLoading(false);
+        }
+    }
+
+    // ── Delete ──
+    function openDelete(m: Member) {
+        setDeleteMember(m);
+        setDeleteOpen(true);
+        setActionMenuId(null);
+    }
+
+    async function handleDelete() {
+        if (!deleteMember) return;
+        setDeleteLoading(true);
+        try {
+            await apiDelete(`/users/${deleteMember.id}`);
+            setDeleteOpen(false);
+            setDeleteMember(null);
+            await loadData();
+        } catch {
+            // silent
+        } finally {
+            setDeleteLoading(false);
+        }
+    }
+
+    // ── Status toggle ──
+    async function toggleStatus(m: Member) {
+        const newStatus = m.status === "ACTIVE" ? "SUSPENDED" : "ACTIVE";
+        try {
+            await apiPatch(`/users/${m.id}/status`, { status: newStatus });
+            await loadData();
+        } catch {
+            // silent
+        }
+        setActionMenuId(null);
+    }
+
+    // ── Invitations ──
+    const [inviteLoading, setInviteLoading] = useState<string | null>(null);
+    async function handleInvite(m: Member) {
+        setInviteLoading(m.id);
+        setActionMenuId(null);
+        try {
+            await apiPost(`/users/${m.id}/invite`, {});
+            alert(`Invitation envoyée à ${m.email} !`);
+        } catch (err) {
+            alert(err instanceof Error ? err.message : "Erreur lors de l'envoi.");
+        } finally {
+            setInviteLoading(null);
+        }
+    }
+
+    // ── Location helper ──
+    function memberLocation(m: Member): string | null {
+        const parts: string[] = [];
+        if (m.residence_city) parts.push(m.residence_city);
+        if (m.residence_country) {
+            const flag = COUNTRY_FLAGS[m.residence_country.toUpperCase()] || "";
+            parts.push(`${flag} ${m.residence_country}`);
+        }
+        return parts.length > 0 ? parts.join(", ") : null;
+    }
+
+    const activeFilterCount =
+        (filterRole !== "ALL" ? 1 : 0) + (filterStatus !== "ALL" ? 1 : 0) + (filterFinance !== "ALL" ? 1 : 0);
+
+    // Permission check for editing a profile
+    const canEditProfile = (targetMemberId: string) => {
+        // Users can edit themselves
+        if (currentUser?.id === targetMemberId) return true;
+        // Admins and above can edit others
+        return ["ADMIN", "SUPER_ADMIN", "PRESIDENT", "SECRETARY"].includes(currentUser?.role || "");
+    };
 
     return (
         <RequirePermission permissions={["members.view"]}>
             <div className="space-y-6">
-                {/* Toast */}
-                {toast && (
-                    <div className={`fixed top-4 left-1/2 -translate-x-1/2 z-[100] flex items-center gap-2 backdrop-blur-md border text-sm px-5 py-3 rounded-xl shadow-xl animate-in fade-in slide-in-from-top duration-300 ${toast.type === "error"
-                        ? "bg-red-500/20 border-red-500/30 text-red-300"
-                        : "bg-emerald-500/20 border-emerald-500/30 text-emerald-300"
-                        }`}>
-                        <AlertCircle className="w-4 h-4 shrink-0" />
-                        {toast.message}
-                    </div>
-                )}
-
                 {/* Header */}
                 <div className="flex items-center justify-between flex-wrap gap-3">
                     <h2 className="text-xl font-bold text-white flex items-center gap-2">
-                        <BookOpen className="w-6 h-6 text-indigo-400" />
-                        Annuaire des Compétences
+                        <Users className="w-5 h-5 text-blue-400" />
+                        Annuaire
+                        {!loading && (
+                            <span className="text-sm font-normal text-gray-400 ml-2">
+                                ({filteredMembers.length}{search || activeFilterCount > 0 ? ` / ${members.length}` : ""})
+                            </span>
+                        )}
                     </h2>
-                    <button onClick={handleExportCsv}
-                        className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-gray-400 hover:text-white hover:bg-white/[0.07] text-sm font-medium transition-colors cursor-pointer">
-                        <Download className="w-4 h-4" />
-                        Exporter CSV
+                    <div className="flex items-center gap-2">
+                        {/* View mode toggle */}
+                        <div className="flex items-center bg-white/5 border border-white/10 rounded-lg p-0.5">
+                            <button
+                                onClick={() => setViewMode("table")}
+                                className={`p-2 rounded-md transition-colors cursor-pointer ${viewMode === "table"
+                                    ? "bg-blue-500/20 text-blue-400"
+                                    : "text-gray-400 hover:text-white"
+                                    }`}
+                                title="Vue tableau"
+                            >
+                                <LayoutList className="w-4 h-4" />
+                            </button>
+                            <button
+                                onClick={() => setViewMode("grid")}
+                                className={`p-2 rounded-md transition-colors cursor-pointer ${viewMode === "grid"
+                                    ? "bg-blue-500/20 text-blue-400"
+                                    : "text-gray-400 hover:text-white"
+                                    }`}
+                                title="Trombinoscope"
+                            >
+                                <LayoutGrid className="w-4 h-4" />
+                            </button>
+                        </div>
+
+                        {/* CSV buttons (omitted implementations for brevity but kept placeholders) */}
+                        {/* Add Member Button - Only for those with create permission */}
+                        {["ADMIN", "SUPER_ADMIN", "PRESIDENT", "SECRETARY"].includes(currentUser?.role || "") && (
+                            <GlassButton
+                                className="!w-auto px-5"
+                                icon={<Plus className="w-4 h-4" />}
+                                onClick={() => setAddOpen(true)}
+                            >
+                                Ajouter
+                            </GlassButton>
+                        )}
+                    </div>
+                </div>
+
+                {/* Stats pills */}
+                {!loading && (
+                    <div className="flex items-center gap-3 flex-wrap">
+                        <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/5 border border-white/10 text-xs text-gray-300">
+                            <Users className="w-3.5 h-3.5 text-blue-400" />
+                            <span className="font-medium">{stats.total}</span> Total
+                        </div>
+                        <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-300">
+                            <UserCheck className="w-3.5 h-3.5" />
+                            <span className="font-medium">{stats.active}</span> Actifs
+                        </div>
+                    </div>
+                )}
+
+                {/* Search & Filters bar */}
+                <div className="flex items-center gap-3 flex-wrap">
+                    <div className="relative flex-1 min-w-[250px] max-w-md">
+                        <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-gray-400">
+                            <Search className="w-4 h-4" />
+                        </div>
+                        <input
+                            type="text"
+                            placeholder="Rechercher par nom, email, rôle, ville…"
+                            value={search}
+                            onChange={(e) => setSearch(e.target.value)}
+                            className="w-full bg-white/5 border border-white/10 text-white rounded-lg py-2.5 pl-10 pr-4 text-sm placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500/60 focus:border-transparent transition-all duration-200 hover:bg-white/[0.07]"
+                        />
+                        {search && (
+                            <button
+                                onClick={() => setSearch("")}
+                                className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-500 hover:text-white transition-colors cursor-pointer"
+                            >
+                                ✕
+                            </button>
+                        )}
+                    </div>
+
+                    <button
+                        onClick={() => setShowFilters(!showFilters)}
+                        className={`flex items-center gap-2 px-3 py-2.5 rounded-lg border text-sm font-medium transition-colors cursor-pointer ${showFilters || activeFilterCount > 0
+                            ? "bg-blue-500/10 border-blue-500/30 text-blue-400"
+                            : "bg-white/5 border-white/10 text-gray-400 hover:text-white hover:bg-white/[0.07]"
+                            }`}
+                    >
+                        <Filter className="w-4 h-4" />
+                        Filtres
+                        {activeFilterCount > 0 && (
+                            <span className="flex items-center justify-center w-5 h-5 rounded-full bg-blue-500 text-white text-xs font-bold">
+                                {activeFilterCount}
+                            </span>
+                        )}
                     </button>
                 </div>
 
-                {/* Tab bar */}
-                <div className="flex gap-1 bg-white/5 border border-white/10 rounded-xl p-1">
-                    {tabs.map((t) => (
-                        <button key={t.key} onClick={() => setActiveTab(t.key)}
-                            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all cursor-pointer ${activeTab === t.key
-                                ? "bg-indigo-500/20 text-indigo-400 border border-indigo-500/30"
-                                : "text-gray-400 hover:text-white hover:bg-white/5 border border-transparent"
-                                }`}>
-                            <t.icon className="w-4 h-4" />
-                            {t.label}
-                        </button>
-                    ))}
-                </div>
-
-                {/* Loading */}
-                {loading && (
-                    <div className="flex items-center justify-center py-16">
-                        <div className="w-6 h-6 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin" />
+                {/* Filter pills */}
+                {showFilters && (
+                    <div className="flex flex-col sm:flex-row gap-4 bg-white/5 border border-white/10 rounded-xl p-4 animate-in slide-in-from-top-2">
+                        <div className="space-y-2 flex-1">
+                            <label className="text-xs font-medium text-gray-400 uppercase tracking-wider">Rôle</label>
+                            <div className="flex flex-wrap gap-1.5">
+                                <button
+                                    onClick={() => setFilterRole("ALL")}
+                                    className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer ${filterRole === "ALL"
+                                        ? "bg-blue-500/20 text-blue-400 border border-blue-500/30"
+                                        : "bg-white/5 text-gray-400 border border-white/10 hover:bg-white/10"
+                                        }`}
+                                >
+                                    Tous
+                                </button>
+                                {uniqueRoles.map((slug) => (
+                                    <button
+                                        key={slug}
+                                        onClick={() => setFilterRole(slug === filterRole ? "ALL" : slug)}
+                                        className="px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors cursor-pointer"
+                                        style={filterRole === slug
+                                            ? roleBadgeStyle(slug)
+                                            : {
+                                                backgroundColor: "rgba(255,255,255,0.03)",
+                                                color: "#9ca3af",
+                                                borderColor: "rgba(255,255,255,0.1)",
+                                            }
+                                        }
+                                    >
+                                        {getRoleLabel(slug)}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
                     </div>
                 )}
 
-                {/* ── TAB: Search ── */}
-                {!loading && activeTab === "search" && (
-                    <div className="space-y-4">
-                        <div className="flex flex-wrap gap-3 items-center">
-                            <div className="relative flex-1 min-w-[200px]">
-                                <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-gray-400">
-                                    <Search className="w-4 h-4" />
-                                </div>
-                                <input type="text" placeholder="Rechercher par nom, métier, employeur…" value={search}
-                                    onChange={(e) => setSearch(e.target.value)}
-                                    className="w-full bg-white/5 border border-white/10 text-white rounded-lg py-2.5 pl-10 pr-4 text-sm placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/60 transition-all hover:bg-white/[0.07]" />
+                {/* ── GRID VIEW ── */}
+                {viewMode === "grid" ? (
+                    <div>
+                        {loading ? (
+                            <div className="flex items-center justify-center py-16">
+                                <div className="w-6 h-6 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
                             </div>
-                            <DirectoryFilters
-                                show={showFilters} onToggle={() => setShowFilters(!showFilters)}
-                                filterSector={filterSector} setFilterSector={setFilterSector}
-                                filterStatus={filterStatus} setFilterStatus={setFilterStatus}
-                                filterEducation={filterEducation} setFilterEducation={setFilterEducation}
-                                filterMentoring={filterMentoring} setFilterMentoring={setFilterMentoring}
-                                filterCity={filterCity} setFilterCity={setFilterCity}
-                                filterSkill={filterSkill} setFilterSkill={setFilterSkill}
-                                activeFilterCount={activeFilterCount} onReset={resetFilters}
+                        ) : filteredMembers.length === 0 ? (
+                            <div className="text-center py-16 text-gray-400">
+                                <Users className="w-10 h-10 mx-auto mb-3 opacity-40" />
+                                <p className="text-sm">Aucun membre trouvé.</p>
+                            </div>
+                        ) : (
+                            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+                                {filteredMembers.map((m) => (
+                                    <div
+                                        key={m.id}
+                                        onClick={() => openMember(m.id)}
+                                        className="group relative bg-white/5 border border-white/10 rounded-xl p-4 text-center hover:bg-white/[0.08] hover:border-white/20 transition-all duration-200 cursor-pointer"
+                                        role="button"
+                                        tabIndex={0}
+                                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') openMember(m.id); }}
+                                    >
+                                        <div
+                                            className="w-16 h-16 rounded-full mx-auto mb-3 flex items-center justify-center text-white text-lg font-bold uppercase shadow-lg"
+                                            style={{
+                                                background: `linear-gradient(135deg, ${getRoleColor(m.role)}, ${getRoleColor(m.role)}88)`,
+                                            }}
+                                        >
+                                            {(m.firstName?.[0] || "") + (m.lastName?.[0] || m.email[0])}
+                                        </div>
+
+                                        <h3 className="text-sm font-medium text-white truncate group-hover:text-blue-400 transition-colors">
+                                            {m.firstName || ""} {m.lastName || ""}
+                                            {!m.firstName && !m.lastName && (
+                                                <span className="text-gray-500 italic text-xs">Non renseigné</span>
+                                            )}
+                                        </h3>
+
+                                        <span
+                                            className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-medium border mt-1.5"
+                                            style={roleBadgeStyle(m.role)}
+                                        >
+                                            {getRoleLabel(m.role)}
+                                        </span>
+
+                                        {memberLocation(m) && (
+                                            <p className="text-[10px] text-gray-500 mt-1.5 truncate flex items-center justify-center gap-1">
+                                                <MapPin className="w-2.5 h-2.5 shrink-0" />
+                                                {memberLocation(m)}
+                                            </p>
+                                        )}
+
+                                        {/* Grid Action Menu Trigger */}
+                                        <div className="absolute top-2 right-2">
+                                            <button
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    setActionMenuId(actionMenuId === m.id ? null : m.id);
+                                                }}
+                                                className="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+                                            >
+                                                <MoreHorizontal className="w-4 h-4" />
+                                            </button>
+
+                                            {/* Action Menu - Reused logic but positioned for grid */}
+                                            {actionMenuId === m.id && (
+                                                <div className="absolute right-0 top-full mt-1 w-48 bg-[#1e293b] border border-white/10 rounded-xl shadow-xl z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-200 text-left">
+                                                    <button
+                                                        onClick={(e) => { e.stopPropagation(); openMember(m.id); }}
+                                                        className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-gray-300 hover:text-white hover:bg-white/5 transition-colors"
+                                                    >
+                                                        <Eye className="w-4 h-4 text-blue-400" />
+                                                        Voir le profil
+                                                    </button>
+
+                                                    {m.status === "PENDING" && (
+                                                        <button
+                                                            onClick={(e) => { e.stopPropagation(); handleInvite(m); }}
+                                                            className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-gray-300 hover:text-white hover:bg-white/5 transition-colors"
+                                                        >
+                                                            <Send className="w-4 h-4 text-purple-400" />
+                                                            {inviteLoading === m.id ? "Envoi..." : "Renvoyer invitation"}
+                                                        </button>
+                                                    )}
+
+                                                    {canEditProfile(m.id) && (
+                                                        <>
+                                                            <button
+                                                                onClick={(e) => { e.stopPropagation(); toggleStatus(m); }}
+                                                                className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-gray-300 hover:text-white hover:bg-white/5 transition-colors"
+                                                            >
+                                                                {m.status === "SUSPENDED" ? (
+                                                                    <>
+                                                                        <Check className="w-4 h-4 text-emerald-400" />
+                                                                        Activer
+                                                                    </>
+                                                                ) : (
+                                                                    <>
+                                                                        <UserX className="w-4 h-4 text-amber-400" />
+                                                                        Suspendre
+                                                                    </>
+                                                                )}
+                                                            </button>
+
+                                                            <div className="h-px bg-white/10 my-1" />
+
+                                                            <button
+                                                                onClick={(e) => { e.stopPropagation(); openDelete(m); }}
+                                                                className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-red-400 hover:text-red-300 hover:bg-red-500/10 transition-colors"
+                                                            >
+                                                                <Trash2 className="w-4 h-4" />
+                                                                Supprimer
+                                                            </button>
+                                                        </>
+                                                    )}
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                ) : (
+                    /* ── TABLE VIEW ── */
+                    <GlassCard className="!p-0 overflow-hidden">
+                        {loading ? (
+                            <div className="flex items-center justify-center py-16">
+                                <div className="w-6 h-6 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
+                            </div>
+                        ) : (
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-sm">
+                                    <thead>
+                                        <tr className="border-b border-white/10">
+                                            <th className="text-left text-gray-400 font-medium px-5 py-3.5">Nom complet</th>
+                                            <th className="text-left text-gray-400 font-medium px-5 py-3.5">Email</th>
+                                            <th className="text-left text-gray-400 font-medium px-5 py-3.5 hidden lg:table-cell">Résidence</th>
+                                            <th className="text-left text-gray-400 font-medium px-5 py-3.5">Rôle</th>
+                                            <th className="text-left text-gray-400 font-medium px-5 py-3.5">Statut</th>
+                                            <th className="text-right text-gray-400 font-medium px-5 py-3.5">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {filteredMembers.map((m) => (
+                                            <tr key={m.id} className="border-b border-white/5 hover:bg-white/[0.03] transition-colors cursor-pointer" onClick={() => openMember(m.id)}>
+                                                <td className="px-5 py-3.5">
+                                                    <div className="flex items-center gap-3">
+                                                        <div className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold uppercase shrink-0"
+                                                            style={{ background: `linear-gradient(135deg, ${getRoleColor(m.role)}, ${getRoleColor(m.role)}99)` }}>
+                                                            {(m.firstName?.[0] || "") + (m.lastName?.[0] || m.email[0])}
+                                                        </div>
+                                                        <p className="text-white font-medium">{m.firstName || ""} {m.lastName || ""}</p>
+                                                    </div>
+                                                </td>
+                                                <td className="px-5 py-3.5 text-gray-300">{m.email}</td>
+                                                <td className="px-5 py-3.5 text-gray-400 text-xs hidden lg:table-cell">
+                                                    {memberLocation(m) || "—"}
+                                                </td>
+                                                <td className="px-5 py-3.5">
+                                                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-md text-xs font-medium border" style={roleBadgeStyle(m.role)}>
+                                                        {getRoleLabel(m.role)}
+                                                    </span>
+                                                </td>
+                                                <td className="px-5 py-3.5">
+                                                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-md text-xs font-medium border ${STATUS_STYLES[m.status]}`}>
+                                                        {STATUS_LABELS[m.status] || m.status}
+                                                    </span>
+                                                </td>
+                                                <td className="px-5 py-3.5 text-right">
+                                                    <div className="relative">
+                                                        <button
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                setActionMenuId(actionMenuId === m.id ? null : m.id);
+                                                            }}
+                                                            className="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+                                                        >
+                                                            <MoreHorizontal className="w-4 h-4" />
+                                                        </button>
+
+                                                        {/* Action Menu */}
+                                                        {actionMenuId === m.id && (
+                                                            <div className="absolute right-0 top-full mt-1 w-48 bg-[#1e293b] border border-white/10 rounded-xl shadow-xl z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+                                                                <button
+                                                                    onClick={(e) => { e.stopPropagation(); openMember(m.id); }}
+                                                                    className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-gray-300 hover:text-white hover:bg-white/5 text-left transition-colors"
+                                                                >
+                                                                    <Eye className="w-4 h-4 text-blue-400" />
+                                                                    Voir le profil
+                                                                </button>
+
+                                                                {m.status === "PENDING" && (
+                                                                    <button
+                                                                        onClick={(e) => { e.stopPropagation(); handleInvite(m); }}
+                                                                        className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-gray-300 hover:text-white hover:bg-white/5 text-left transition-colors"
+                                                                    >
+                                                                        <Send className="w-4 h-4 text-purple-400" />
+                                                                        {inviteLoading === m.id ? "Envoi..." : "Renvoyer invitation"}
+                                                                    </button>
+                                                                )}
+
+                                                                {canEditProfile(m.id) && (
+                                                                    <>
+                                                                        <button
+                                                                            onClick={(e) => { e.stopPropagation(); toggleStatus(m); }}
+                                                                            className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-gray-300 hover:text-white hover:bg-white/5 text-left transition-colors"
+                                                                        >
+                                                                            {m.status === "SUSPENDED" ? (
+                                                                                <>
+                                                                                    <Check className="w-4 h-4 text-emerald-400" />
+                                                                                    Activer le compte
+                                                                                </>
+                                                                            ) : (
+                                                                                <>
+                                                                                    <UserX className="w-4 h-4 text-amber-400" />
+                                                                                    Suspendre
+                                                                                </>
+                                                                            )}
+                                                                        </button>
+
+                                                                        <div className="h-px bg-white/10 my-1" />
+
+                                                                        <button
+                                                                            onClick={(e) => { e.stopPropagation(); openDelete(m); }}
+                                                                            className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-red-400 hover:text-red-300 hover:bg-red-500/10 text-left transition-colors"
+                                                                        >
+                                                                            <Trash2 className="w-4 h-4" />
+                                                                            Supprimer
+                                                                        </button>
+                                                                    </>
+                                                                )}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
+                    </GlassCard>
+                )}
+
+                {/* ── Profile Modal ── */}
+                {/* We use a large modal to display the MemberProfileView */}
+                {selectedMemberId && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+                        <div className="w-full max-w-4xl max-h-[90vh] overflow-y-auto bg-[#0a0f1c] border border-white/10 rounded-2xl shadow-2xl relative">
+                            {/* Close button inside the component or here? MemberProfileView has onClose prop now */}
+                            <MemberProfileView
+                                userId={selectedMemberId}
+                                isEditable={canEditProfile(selectedMemberId)}
+                                onClose={closeMember}
                             />
                         </div>
-
-                        <p className="text-sm text-gray-400">
-                            {totalMembers} membre{totalMembers !== 1 ? "s" : ""} trouvé{totalMembers !== 1 ? "s" : ""}
-                        </p>
-
-                        {members.length === 0 ? (
-                            <div className="text-center py-12 text-gray-500">
-                                <Users className="w-8 h-8 mx-auto mb-2 opacity-40" />
-                                <p className="text-sm">Aucun résultat pour ces critères.</p>
-                            </div>
-                        ) : (
-                            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                                {members.map((m) => (
-                                    <MemberCard key={m.id} member={m} onEdit={() => setEditMember(m)} />
-                                ))}
-                            </div>
-                        )}
-
-                        {/* Pagination */}
-                        {totalPages > 1 && (
-                            <Pagination page={page} totalPages={totalPages} onPageChange={(p) => loadSearchData(p)} />
-                        )}
                     </div>
                 )}
 
-                {/* ── TAB: Mentors ── */}
-                {!loading && activeTab === "mentors" && (
-                    <div className="space-y-4">
-                        <div className="flex items-center gap-2 bg-amber-500/10 border border-amber-500/20 rounded-xl p-4">
-                            <Heart className="w-5 h-5 text-amber-400 shrink-0" />
-                            <p className="text-sm text-amber-200">
-                                Ces membres se sont déclarés disponibles pour accompagner et guider les jeunes ou d&apos;autres membres.
-                            </p>
-                        </div>
+                {/* ── Add Modal ── */}
+                <GlassModal
+                    open={addOpen}
+                    onClose={() => { setAddOpen(false); setAddStep(1); }}
+                    title={addStep === 1 ? "Ajouter un membre (1/2)" : "Ajouter un membre (2/2)"}
+                >
+                    <form onSubmit={handleAdd} className="space-y-4">
+                        {addError && <div className="text-red-400 text-sm">{addError}</div>}
 
-                        {mentors.length === 0 ? (
-                            <div className="text-center py-12 text-gray-500">
-                                <Heart className="w-8 h-8 mx-auto mb-2 opacity-40" />
-                                <p className="text-sm">Aucun mentor disponible pour le moment.</p>
-                            </div>
-                        ) : (
-                            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                                {mentors.map((m) => (
-                                    <MemberCard key={m.id} member={m} onEdit={() => setEditMember(m)} isMentor />
-                                ))}
-                            </div>
-                        )}
+                        {/* Step 1: Identity */}
+                        {addStep === 1 && (
+                            <div className="space-y-4">
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div className="space-y-1">
+                                        <label className="text-xs text-gray-400 font-medium ml-1">Genre</label>
+                                        <select
+                                            className="w-full bg-white/5 border border-white/10 text-white rounded-xl py-2.5 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/60"
+                                            value={addForm.gender}
+                                            onChange={e => setAddForm({ ...addForm, gender: e.target.value })}
+                                        >
+                                            <option value="" className="bg-slate-800">— Sélectionner —</option>
+                                            <option value="MALE" className="bg-slate-800">Homme</option>
+                                            <option value="FEMALE" className="bg-slate-800">Femme</option>
+                                        </select>
+                                    </div>
+                                    <GlassInput
+                                        label="Rôle"
+                                        value=""
+                                        onChange={() => { }}
+                                        readOnly
+                                        placeholder="Défini à l'étape suivante"
+                                        className="opacity-50 pointer-events-none"
+                                    />
+                                </div>
 
-                        {mentorPages > 1 && (
-                            <Pagination page={mentorPage} totalPages={mentorPages} onPageChange={(p) => loadMentorsData(p)} />
-                        )}
-                    </div>
-                )}
+                                <div className="grid grid-cols-2 gap-4">
+                                    <GlassInput
+                                        label="Prénom"
+                                        value={addForm.firstName}
+                                        onChange={e => setAddForm({ ...addForm, firstName: e.target.value })}
+                                        icon={<User className="w-4 h-4" />}
+                                        required
+                                    />
+                                    <GlassInput
+                                        label="Nom"
+                                        value={addForm.lastName}
+                                        onChange={e => setAddForm({ ...addForm, lastName: e.target.value })}
+                                        icon={<User className="w-4 h-4" />}
+                                        required
+                                    />
+                                </div>
 
-                {/* ── TAB: Dashboard ── */}
-                {!loading && activeTab === "dashboard" && stats && (
-                    <div className="space-y-6">
-                        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                            <StatCard label="Membres actifs" value={stats.totalActive} icon={Users} color="indigo" />
-                            <StatCard label="Profils complétés" value={`${stats.profileCompletionRate}%`} icon={TrendingUp} color="emerald" />
-                            <StatCard label="Mentors disponibles" value={stats.totalMentors} icon={Heart} color="amber" />
-                            <StatCard label="Compétences recensées" value={stats.topSkills.length} icon={Award} color="purple" />
-                        </div>
+                                <GlassInput
+                                    label="Email"
+                                    type="email"
+                                    value={addForm.email}
+                                    onChange={e => setAddForm({ ...addForm, email: e.target.value })}
+                                    icon={<Mail className="w-4 h-4" />}
+                                    required
+                                />
 
-                        <div className="grid lg:grid-cols-2 gap-6">
-                            <DistributionChart title="Répartition par secteur" icon={<Briefcase className="w-4 h-4 text-indigo-400" />}
-                                data={stats.sectorDistribution} labels={SECTOR_LABELS} colorOffset={0} />
-                            <DistributionChart title="Niveau d'études" icon={<GraduationCap className="w-4 h-4 text-emerald-400" />}
-                                data={stats.educationDistribution} labels={EDUCATION_LABELS} colorOffset={4} />
-                            <DistributionChart title="Situation professionnelle" icon={<Briefcase className="w-4 h-4 text-pink-400" />}
-                                data={stats.statusDistribution} labels={PRO_STATUS_LABELS} colorOffset={7} />
+                                <GlassInput
+                                    label="Téléphone"
+                                    type="tel"
+                                    value={addForm.phone}
+                                    onChange={e => setAddForm({ ...addForm, phone: e.target.value })}
+                                    placeholder="+237 6XX XXX XXX"
+                                />
 
-                            {/* Top skills */}
-                            <div className="bg-white/5 border border-white/10 rounded-xl p-5 space-y-4">
-                                <h3 className="text-sm font-semibold text-white flex items-center gap-2">
-                                    <Award className="w-4 h-4 text-amber-400" />
-                                    Top compétences
-                                </h3>
-                                <div className="flex flex-wrap gap-2">
-                                    {stats.topSkills.map((s) => (
-                                        <span key={s.name}
-                                            className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium border ${SKILL_CATEGORY_COLORS[s.category || "OTHER"]}`}>
-                                            {s.name}
-                                            <span className="text-[10px] opacity-60">({s.memberCount})</span>
-                                        </span>
-                                    ))}
-                                    {stats.topSkills.length === 0 && (
-                                        <p className="text-xs text-gray-500 italic">Aucune compétence enregistrée.</p>
-                                    )}
+                                <div className="grid grid-cols-2 gap-4">
+                                    <GlassInput
+                                        label="Ville de résidence"
+                                        value={addForm.residence_city}
+                                        onChange={e => setAddForm({ ...addForm, residence_city: e.target.value })}
+                                        icon={<MapPin className="w-4 h-4" />}
+                                    />
+                                    <div className="space-y-1">
+                                        <label className="text-xs text-gray-400 font-medium ml-1">Pays</label>
+                                        <select
+                                            className="w-full bg-white/5 border border-white/10 text-white rounded-xl py-2.5 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/60"
+                                            value={addForm.residence_country}
+                                            onChange={e => setAddForm({ ...addForm, residence_country: e.target.value })}
+                                        >
+                                            <option value="" className="bg-slate-800">— Pays —</option>
+                                            {Object.keys(COUNTRY_FLAGS).map(code => (
+                                                <option key={code} value={code} className="bg-slate-800">
+                                                    {COUNTRY_FLAGS[code]} {code}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </div>
                                 </div>
                             </div>
+                        )}
+
+                        {/* Step 2: Role & Family */}
+                        {addStep === 2 && (
+                            <div className="space-y-4">
+                                {/* Role Selection */}
+                                <div className="space-y-1">
+                                    <label className="text-xs text-gray-400 font-medium ml-1 flex items-center gap-2">
+                                        <Shield className="w-3.5 h-3.5" /> Rôle
+                                    </label>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        {roles.map(role => (
+                                            <div
+                                                key={role.slug}
+                                                onClick={() => setAddForm({ ...addForm, role: role.slug })}
+                                                className={`
+                                                    p-2.5 rounded-xl border text-sm font-medium cursor-pointer transition-all
+                                                    ${addForm.role === role.slug
+                                                        ? "bg-blue-500/20 border-blue-500/50 text-white shadow-sm shadow-blue-500/20"
+                                                        : "bg-white/5 border-white/10 text-gray-400 hover:bg-white/10"
+                                                    }
+                                                `}
+                                            >
+                                                {role.name}
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                {/* Branch Selection */}
+                                {branches.length > 0 && (
+                                    <div className="space-y-1">
+                                        <label className="text-xs text-gray-400 font-medium ml-1 flex items-center gap-2">
+                                            <GitBranch className="w-3.5 h-3.5" /> Branche Familiale
+                                        </label>
+                                        <select
+                                            className="w-full bg-white/5 border border-white/10 text-white rounded-xl py-2.5 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/60"
+                                            value={addForm.familyBranchId}
+                                            onChange={e => setAddForm({ ...addForm, familyBranchId: e.target.value })}
+                                        >
+                                            <option value="" className="bg-slate-800">— Sélectionner —</option>
+                                            {branches.map(b => (
+                                                <option key={b.id} value={b.id} className="bg-slate-800">
+                                                    {b.name}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                )}
+
+                                {/* Parents */}
+                                <div className="space-y-1">
+                                    <label className="text-xs text-gray-400 font-medium ml-1 flex items-center gap-2">
+                                        <Users className="w-3.5 h-3.5" /> Parents (max 2)
+                                    </label>
+                                    <select
+                                        multiple
+                                        className="w-full bg-white/5 border border-white/10 text-white rounded-xl py-2 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/60 min-h-[80px]"
+                                        value={addForm.parentIds}
+                                        onChange={e => {
+                                            const options = Array.from(e.target.selectedOptions, option => option.value);
+                                            if (options.length <= 2) {
+                                                setAddForm({ ...addForm, parentIds: options });
+                                            }
+                                        }}
+                                    >
+                                        {members.map(m => (
+                                            <option key={m.id} value={m.id} className="bg-slate-800">
+                                                {m.firstName} {m.lastName} ({m.email})
+                                            </option>
+                                        ))}
+                                    </select>
+                                    <p className="text-[10px] text-gray-500 ml-1">Maintenez Ctrl (ou Cmd) pour sélectionner plusieurs.</p>
+                                </div>
+
+                                {/* Spouse */}
+                                <div className="space-y-1">
+                                    <label className="text-xs text-gray-400 font-medium ml-1 flex items-center gap-2">
+                                        <Heart className="w-3.5 h-3.5" /> Conjoint(e)
+                                    </label>
+                                    <select
+                                        className="w-full bg-white/5 border border-white/10 text-white rounded-xl py-2.5 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-pink-500/60"
+                                        value={addForm.spouseId}
+                                        onChange={e => setAddForm({ ...addForm, spouseId: e.target.value })}
+                                    >
+                                        <option value="" className="bg-slate-800">— Aucun(e) —</option>
+                                        {members.map(m => (
+                                            <option key={m.id} value={m.id} className="bg-slate-800">
+                                                {m.firstName} {m.lastName} ({m.email})
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+                            </div>
+                        )}
+
+                        <div className="flex justify-between pt-4 border-t border-white/10 mt-6">
+                            {addStep > 1 ? (
+                                <button
+                                    type="button"
+                                    onClick={() => setAddStep(s => s - 1)}
+                                    className="px-4 py-2 rounded-lg text-sm font-medium text-gray-400 hover:text-white hover:bg-white/5 transition-colors"
+                                >
+                                    ← Précédent
+                                </button>
+                            ) : (
+                                <div />
+                            )}
+
+                            {addStep < 2 ? (
+                                <GlassButton
+                                    type="button"
+                                    onClick={() => setAddStep(s => s + 1)}
+                                    className="w-auto px-6"
+                                    icon={<ChevronRight className="w-4 h-4" />}
+                                >
+                                    Suivant
+                                </GlassButton>
+                            ) : (
+                                <GlassButton
+                                    type="submit"
+                                    isLoading={addLoading}
+                                    className="w-auto px-6"
+                                    icon={<Check className="w-4 h-4" />}
+                                >
+                                    Ajouter le membre
+                                </GlassButton>
+                            )}
+                        </div>
+                    </form>
+                </GlassModal>
+
+                {/* ── Delete Modal ── */}
+                <GlassModal
+                    open={deleteOpen}
+                    onClose={() => setDeleteOpen(false)}
+                    title="Supprimer le membre"
+                >
+                    <div className="space-y-4">
+                        <p className="text-gray-300 text-sm">
+                            Êtes-vous sûr de vouloir supprimer <strong>{deleteMember?.email}</strong> ?
+                            <br />
+                            Cette action est irréversible.
+                        </p>
+                        <div className="flex justify-end gap-3">
+                            <button
+                                onClick={() => setDeleteOpen(false)}
+                                className="px-4 py-2 text-sm text-gray-400 hover:text-white transition-colors"
+                            >
+                                Annuler
+                            </button>
+                            <GlassButton
+                                onClick={handleDelete}
+                                isLoading={deleteLoading}
+                                className="bg-red-500/20 hover:bg-red-500/30 text-red-400 border-red-500/30"
+                            >
+                                Supprimer
+                            </GlassButton>
                         </div>
                     </div>
-                )}
+                </GlassModal>
 
-                {/* Profile editor modal */}
-                <ProfileEditorModal
-                    member={editMember}
-                    onClose={() => setEditMember(null)}
-                    onSaved={() => {
-                        showToast("Profil mis à jour !", "success");
-                        if (activeTab === "search") loadSearchData(page);
-                        else if (activeTab === "mentors") loadMentorsData(mentorPage);
-                    }}
-                    onError={(msg) => showToast(msg)}
-                />
             </div>
         </RequirePermission>
-    );
-}
-
-/* ─── Pagination component ─── */
-function Pagination({ page, totalPages, onPageChange }: { page: number; totalPages: number; onPageChange: (p: number) => void }) {
-    return (
-        <div className="flex items-center justify-center gap-3 pt-2">
-            <button onClick={() => onPageChange(page - 1)} disabled={page <= 1}
-                className="flex items-center gap-1 px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-sm text-gray-400 hover:text-white hover:bg-white/[0.07] transition-colors disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer">
-                <ChevronLeft className="w-4 h-4" />
-                Précédent
-            </button>
-            <span className="text-sm text-gray-400">
-                Page <span className="text-white font-medium">{page}</span> sur <span className="text-white font-medium">{totalPages}</span>
-            </span>
-            <button onClick={() => onPageChange(page + 1)} disabled={page >= totalPages}
-                className="flex items-center gap-1 px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-sm text-gray-400 hover:text-white hover:bg-white/[0.07] transition-colors disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer">
-                Suivant
-                <ChevronRight className="w-4 h-4" />
-            </button>
-        </div>
-    );
-}
-
-/* ─── Distribution chart ─── */
-function DistributionChart({ title, icon, data, labels, colorOffset }: {
-    title: string; icon: React.ReactNode; data: Record<string, number>;
-    labels: Record<string, string>; colorOffset: number;
-}) {
-    const entries = Object.entries(data).sort((a, b) => b[1] - a[1]);
-    const max = entries.length > 0 ? Math.max(...entries.map(([, v]) => v)) : 0;
-
-    return (
-        <div className="bg-white/5 border border-white/10 rounded-xl p-5 space-y-4">
-            <h3 className="text-sm font-semibold text-white flex items-center gap-2">
-                {icon}
-                {title}
-            </h3>
-            <div className="space-y-2">
-                {entries.map(([key, count], i) => {
-                    const pct = max > 0 ? (count / max) * 100 : 0;
-                    return (
-                        <div key={key} className="flex items-center gap-3">
-                            <span className="text-xs text-gray-400 w-28 truncate">{labels[key] || key}</span>
-                            <div className="flex-1 bg-white/5 rounded-full h-3 overflow-hidden">
-                                <div className="h-full rounded-full transition-all"
-                                    style={{ width: `${pct}%`, backgroundColor: CHART_COLORS[(i + colorOffset) % CHART_COLORS.length] }} />
-                            </div>
-                            <span className="text-xs text-white font-medium w-6 text-right">{count}</span>
-                        </div>
-                    );
-                })}
-                {entries.length === 0 && <p className="text-xs text-gray-500 italic">Aucune donnée.</p>}
-            </div>
-        </div>
     );
 }

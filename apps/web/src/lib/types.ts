@@ -32,3 +32,40 @@ export interface Wallet {
     status: string;
     transactions?: WalletTransaction[];
 }
+
+export interface UserAssociation {
+    id: string;
+    userId: string;
+    associationId: string;
+    role: string;
+    joinedAt: string;
+    user: {
+        id: string;
+        firstName: string;
+        lastName: string;
+        email: string;
+        role: string;
+        avatar_url?: string;
+        phone?: string;
+        residence_city?: string;
+        residence_country?: string;
+    };
+    association: {
+        id: string;
+        name: string;
+        address_city?: string;
+        networkLevel?: string;
+        is_active?: boolean;
+    };
+}
+
+export interface Notification {
+    id: string;
+    title: string;
+    message: string;
+    type: 'INFO' | 'SUCCESS' | 'WARNING' | 'ERROR' | 'ASSIGNMENT' | 'OBJECTIVE' | 'DOCUMENT';
+    read: boolean;
+    link?: string;
+    metadata?: string;
+    createdAt: string;
+}

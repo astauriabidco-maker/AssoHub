@@ -126,6 +126,16 @@ export class DirectoryController {
         return this.directoryService.getUserSkills(associationId, userId);
     }
 
+    // ── Get single user profile ──
+    @Get('user/:userId')
+    @Permissions('members.view')
+    getProfile(
+        @GetUser('associationId') associationId: string,
+        @Param('userId') userId: string,
+    ) {
+        return this.directoryService.getProfile(associationId, userId);
+    }
+
     // ── Update professional profile ──
     @Patch('profile/:userId')
     @Permissions('members.edit')

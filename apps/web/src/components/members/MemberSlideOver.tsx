@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { X, Calendar, CreditCard, MapPin, Phone, Users as UsersIcon, Mail, CheckCircle, Clock, XCircle, Briefcase, Award, Plus, GraduationCap, Building2 } from "lucide-react";
+import { X, Calendar, CreditCard, MapPin, Phone, Users as UsersIcon, Mail, CheckCircle, Clock, XCircle, Briefcase, Award, Plus, GraduationCap, Building2, Network } from "lucide-react";
 import { apiGet, apiPatch, apiPost, apiDelete } from "@/lib/api";
 import {
     PRO_STATUS_LABELS,
@@ -58,6 +58,19 @@ interface MemberSkill {
     level: string | null;
 }
 
+interface SecondaryAssociation {
+    id: string;
+    role: string;
+    joinedAt: string;
+    association: {
+        id: string;
+        name: string;
+        address_city?: string;
+        networkLevel?: string;
+        is_active?: boolean;
+    };
+}
+
 const FALLBACK_ROLE_COLORS: Record<string, string> = {
     ADMIN: "#8b5cf6",
     PRESIDENT: "#10b981",
@@ -101,6 +114,7 @@ export default function MemberSlideOver({
     const [proSaving, setProSaving] = useState(false);
     const [newSkill, setNewSkill] = useState("");
     const [newSkillCategory, setNewSkillCategory] = useState("TECHNICAL");
+    const [secondaryAssociations, setSecondaryAssociations] = useState<SecondaryAssociation[]>([]);
 
     useEffect(() => {
         if (member) {
@@ -116,6 +130,10 @@ export default function MemberSlideOver({
             apiGet(`/directory/skills/user/${member.id}`)
                 .then((data) => setSkills(data as MemberSkill[]))
                 .catch(() => setSkills([]));
+            // Load secondary associations (antennes)
+            apiGet(`/user-associations/user/${member.id}`)
+                .then((data) => setSecondaryAssociations(data as SecondaryAssociation[]))
+                .catch(() => setSecondaryAssociations([]));
             // Init pro form
             setProForm({
                 professionalStatus: member.professionalStatus || "",
@@ -129,6 +147,7 @@ export default function MemberSlideOver({
         } else {
             setFees([]);
             setSkills([]);
+            setSecondaryAssociations([]);
         }
     }, [member]);
 
@@ -374,6 +393,47 @@ export default function MemberSlideOver({
                                     </div>
                                 )}
                             </div>
+
+                            {/* Secondary Associations (Antennes) */}
+                            {secondaryAssociations.length > 0 && (
+                                <div className="space-y-3">
+                                    <h5 className="text-sm font-semibold text-white flex items-center gap-2">
+                                        <Network className="w-4 h-4 text-purple-400" />
+                                        Antennes rattachées
+                                    </h5>
+                                    <div className="space-y-2">
+                                        {secondaryAssociations.map((sa) => (
+                                            <div
+                                                key={sa.id}
+                                                className="flex items-center gap-3 bg-white/5 border border-white/10 rounded-xl p-3"
+                                            >
+                                                <div className="w-8 h-8 rounded-lg bg-purple-500/15 flex items-center justify-center text-xs font-bold text-purple-300">
+                                                    {sa.association.name[0]}
+                                                </div>
+                                                <div className="flex-1 min-w-0">
+                                                    <p className="text-sm font-medium text-white truncate">
+                                                        {sa.association.name}
+                                                    </p>
+                                                    <div className="flex items-center gap-2 mt-0.5">
+                                                        {sa.association.address_city && (
+                                                            <span className="text-[10px] text-gray-500 flex items-center gap-0.5">
+                                                                <MapPin className="w-2.5 h-2.5" />
+                                                                {sa.association.address_city}
+                                                            </span>
+                                                        )}
+                                                        <span className="text-[10px] text-gray-500">
+                                                            Depuis {new Date(sa.joinedAt).toLocaleDateString("fr-FR", { month: "short", year: "numeric" })}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                                <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-purple-500/15 text-purple-300 border border-purple-500/20 shrink-0">
+                                                    {sa.role}
+                                                </span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
 
                             {/* Financial History */}
                             <div className="space-y-3">

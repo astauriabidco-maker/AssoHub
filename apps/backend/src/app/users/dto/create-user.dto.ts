@@ -23,4 +23,5 @@ export class CreateUserDto {
     // Family links (created after user creation)
     parentIds?: string[];   // IDs of parent members
     spouseId?: string;      // ID of spouse member
+    familyBranchId?: string; // FK to FamilyBranch
 }

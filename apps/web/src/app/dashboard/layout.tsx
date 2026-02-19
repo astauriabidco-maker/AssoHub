@@ -19,8 +19,10 @@ import {
     GitBranch,
     BookOpen,
     CreditCard,
+    Receipt,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
+import NotificationsPopover from "@/components/NotificationsPopover";
 
 interface NavItem {
     href: string;
@@ -32,15 +34,14 @@ interface NavItem {
 
 const allNavItems: NavItem[] = [
     { href: "/dashboard", label: "Vue d'ensemble", icon: LayoutDashboard, permission: "dashboard.view" },
-    { href: "/dashboard/members", label: "Membres", icon: Users, permission: "members.view" },
-    { href: "/dashboard/groups", label: "Groupes", icon: FolderOpen, permission: "groups.view" },
-    { href: "/dashboard/finance", label: "Finances", icon: Wallet, permission: "finance.view" },
+    { href: "/dashboard/directory", label: "Annuaire", icon: BookOpen, permission: "members.view" },
+    { href: "/dashboard/groups", label: "Commissions", icon: FolderOpen, permission: "groups.view" },
+    { href: "/dashboard/my-fees", label: "Mes Cotisations", icon: Receipt },
+    { href: "/dashboard/finance", label: "Finances (Admin)", icon: Wallet, permission: "finance.view" },
     { href: "/dashboard/events", label: "Événements", icon: CalendarDays, permission: "events.view" },
     { href: "/dashboard/documents", label: "Documents", icon: FolderOpen, permission: "events.view" },
-    { href: "/dashboard/directory", label: "Annuaire", icon: BookOpen, permission: "members.view" },
     { href: "/dashboard/network", label: "Réseau", icon: Network, permission: "settings.manage" },
     { href: "/dashboard/wallet", label: "Portefeuille", icon: CreditCard },
-    { href: "/dashboard/profile", label: "Mon Espace", icon: UserCircle },
     { href: "/dashboard/settings", label: "Paramètres", icon: Settings, permission: "settings.manage" },
     { href: "/dashboard/settings/roles", label: "Rôles", icon: Shield, permission: "roles.manage" },
     { href: "/dashboard/family-tree", label: "Arbre Familial", icon: GitBranch, permission: "members.view", familyOnly: true },
@@ -178,12 +179,15 @@ export default function DashboardLayout({
                         </h1>
                     </div>
                     <div className="flex items-center gap-4">
+                        <NotificationsPopover />
                         <span className="text-sm text-gray-400 hidden sm:block">
                             {user.firstName} {user.lastName}
                         </span>
-                        <div className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white text-sm font-bold uppercase">
-                            {initials}
-                        </div>
+                        <Link href="/dashboard/directory?user=me">
+                            <div className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white text-sm font-bold uppercase cursor-pointer hover:ring-2 hover:ring-blue-500/50 transition-all">
+                                {initials}
+                            </div>
+                        </Link>
                     </div>
                 </header>
 

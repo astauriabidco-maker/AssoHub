@@ -10,6 +10,8 @@ import {
 } from '@nestjs/common';
 import { GroupsService } from './groups.service';
 import { CreateGroupDto } from './dto/create-group.dto';
+import { CreateObjectiveDto } from './dto/create-objective.dto';
+import { UpdateObjectiveDto } from './dto/update-objective.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { PermissionsGuard } from '../auth/permissions.guard';
 import { Permissions } from '../auth/permissions.decorator';
@@ -88,5 +90,46 @@ export class GroupsController {
         @Param('memberId') memberId: string,
     ) {
         return this.groupsService.removeMember(associationId, id, memberId);
+    }
+    // ── OBJECTIFS ──
+
+    @Post(':id/objectives')
+    @Permissions('groups.edit')
+    addObjective(
+        @GetUser('associationId') associationId: string,
+        @Param('id') groupId: string,
+        @Body() dto: CreateObjectiveDto,
+    ) {
+        return this.groupsService.addObjective(associationId, groupId, dto);
+    }
+
+    @Get(':id/objectives')
+    @Permissions('groups.view')
+    getObjectives(
+        @GetUser('associationId') associationId: string,
+        @Param('id') groupId: string,
+    ) {
+        return this.groupsService.getObjectives(associationId, groupId);
+    }
+
+    @Patch(':id/objectives/:objId')
+    @Permissions('groups.edit')
+    updateObjective(
+        @GetUser('associationId') associationId: string,
+        @Param('id') groupId: string, // Not strictly used by service but good for REST structure
+        @Param('objId') objId: string,
+        @Body() dto: UpdateObjectiveDto,
+    ) {
+        return this.groupsService.updateObjective(associationId, objId, dto);
+    }
+
+    @Delete(':id/objectives/:objId')
+    @Permissions('groups.edit')
+    deleteObjective(
+        @GetUser('associationId') associationId: string,
+        @Param('id') groupId: string,
+        @Param('objId') objId: string,
+    ) {
+        return this.groupsService.deleteObjective(associationId, objId);
     }
 }

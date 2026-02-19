@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { WalletCard } from '@/components/wallet/WalletCard';
 import { TransactionHistory } from '@/components/wallet/TransactionHistory';
 import { TopUpModal } from '@/components/wallet/TopUpModal';
+import { PendingFeesList } from '@/components/wallet/PendingFeesList';
 import { Wallet } from '@/lib/types';
 import { useAuth } from '@/hooks/useAuth';
 import { API_URL } from '@/lib/api';
@@ -73,12 +74,18 @@ export default function WalletPage() {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div className="md:col-span-1">
+                <div className="md:col-span-1 space-y-6">
                     <WalletCard
                         wallet={wallet}
                         isLoading={isLoading}
                         onTopUp={() => setIsModalOpen(true)}
                     />
+                    {wallet && (
+                        <PendingFeesList
+                            walletBalance={wallet.balance}
+                            onPaymentSuccess={fetchWallet}
+                        />
+                    )}
                 </div>
                 <div className="md:col-span-2">
                     <TransactionHistory

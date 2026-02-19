@@ -19,6 +19,7 @@ export const USER_SELECT = {
     residence_city: true,
     residence_country: true,
     family_branch: true,
+    familyBranchId: true,
     birth_date: true,
     membership_date: true,
     professionalStatus: true,

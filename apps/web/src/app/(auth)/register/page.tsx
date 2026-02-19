@@ -3,7 +3,7 @@
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Rocket, Building2, User, Mail, Lock, MapPin, Landmark, ChevronRight, ChevronLeft } from "lucide-react";
+import { Rocket, Building2, User, Mail, Lock, MapPin, Landmark, ChevronRight, ChevronLeft, Plus, Trash2, GitBranch } from "lucide-react";
 import GlassCard from "@/components/ui/GlassCard";
 import GlassInput from "@/components/ui/GlassInput";
 import GlassButton from "@/components/ui/GlassButton";
@@ -28,6 +28,7 @@ export default function RegisterPage() {
         originVillage: "",
         originRegion: "",
         chieftaincy: "",
+        branches: [{ name: "", founderName: "" }] as { name: string; founderName: string }[],
         firstName: "",
         lastName: "",
         email: "",
@@ -51,7 +52,13 @@ export default function RegisterPage() {
         setIsLoading(true);
 
         try {
-            const data = await apiPost<AuthResponse>("/auth/register", form);
+            const payload = {
+                ...form,
+                branches: form.associationType === "FAMILY"
+                    ? form.branches.filter((b) => b.name.trim())
+                    : undefined,
+            };
+            const data = await apiPost<AuthResponse>("/auth/register", payload);
             localStorage.setItem("token", data.access_token);
             localStorage.setItem("user", JSON.stringify(data.user));
             localStorage.setItem("association", JSON.stringify(data.association));
@@ -197,6 +204,79 @@ export default function RegisterPage() {
                                         updateField("chieftaincy", e.target.value)
                                     }
                                 />
+                            </div>
+                        )}
+
+                        {/* Branches principales (FAMILY only) */}
+                        {form.associationType === "FAMILY" && (
+                            <div className="space-y-3 pt-1">
+                                <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-2">
+                                        <GitBranch className="w-4 h-4 text-purple-400" />
+                                        <span className="text-sm font-medium text-gray-300">
+                                            Branches principales
+                                        </span>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() =>
+                                            setForm((p) => ({
+                                                ...p,
+                                                branches: [...p.branches, { name: "", founderName: "" }],
+                                            }))
+                                        }
+                                        className="flex items-center gap-1 text-xs text-purple-400 hover:text-purple-300 transition-colors cursor-pointer"
+                                    >
+                                        <Plus className="w-3 h-3" />
+                                        Ajouter
+                                    </button>
+                                </div>
+                                <p className="text-[10px] text-gray-500">
+                                    Définissez les branches fondatrices de votre famille (ex: Branche Pierre, Branche Jean).
+                                </p>
+                                {form.branches.map((branch, idx) => (
+                                    <div key={idx} className="flex items-start gap-2">
+                                        <div className="flex-1 grid grid-cols-2 gap-2">
+                                            <GlassInput
+                                                label={`Branche ${idx + 1}`}
+                                                placeholder="Nom de la branche"
+                                                icon={<GitBranch className="w-4 h-4" />}
+                                                value={branch.name}
+                                                onChange={(e) => {
+                                                    const updated = [...form.branches];
+                                                    updated[idx] = { ...updated[idx], name: e.target.value };
+                                                    setForm((p) => ({ ...p, branches: updated }));
+                                                }}
+                                                required
+                                            />
+                                            <GlassInput
+                                                label="Fondateur"
+                                                placeholder="Patriarche / Fondateur"
+                                                icon={<User className="w-4 h-4" />}
+                                                value={branch.founderName}
+                                                onChange={(e) => {
+                                                    const updated = [...form.branches];
+                                                    updated[idx] = { ...updated[idx], founderName: e.target.value };
+                                                    setForm((p) => ({ ...p, branches: updated }));
+                                                }}
+                                            />
+                                        </div>
+                                        {form.branches.length > 1 && (
+                                            <button
+                                                type="button"
+                                                onClick={() =>
+                                                    setForm((p) => ({
+                                                        ...p,
+                                                        branches: p.branches.filter((_, i) => i !== idx),
+                                                    }))
+                                                }
+                                                className="mt-7 p-1.5 rounded-lg hover:bg-red-500/10 text-gray-500 hover:text-red-400 transition-colors cursor-pointer"
+                                            >
+                                                <Trash2 className="w-3.5 h-3.5" />
+                                            </button>
+                                        )}
+                                    </div>
+                                ))}
                             </div>
                         )}
 

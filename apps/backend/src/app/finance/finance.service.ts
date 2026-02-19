@@ -1,272 +1,100 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+"use client";
+
+import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateCampaignDto } from './dto/create-campaign.dto';
 import { CreateExpenseDto } from './dto/create-expense.dto';
+import { MailService } from '../mail/mail.service';
+import { CampaignService } from './services/campaign.service';
+import { TreasuryService } from './services/treasury.service';
+import { PaymentService } from './services/payment.service';
+import { ReportService } from './services/report.service';
+import { Response } from 'express'; // Required for Reports
 
 @Injectable()
 export class FinanceService {
-    constructor(private prisma: PrismaService) { }
+    private readonly logger = new Logger(FinanceService.name);
 
-    // ── Helper: compute campaign stats (shared by list/detail/global) ──
-    private computeCampaignStats(campaign: { amount: number; fees: { status: string }[] }) {
-        const totalFees = campaign.fees.length;
-        const paidFees = campaign.fees.filter((f) => f.status === 'PAID').length;
-        const overdueFees = campaign.fees.filter((f) => f.status === 'OVERDUE').length;
-        const pendingFees = totalFees - paidFees - overdueFees;
-        const totalExpected = totalFees * campaign.amount;
-        const totalCollected = paidFees * campaign.amount;
-        return {
-            totalMembers: totalFees,
-            paidMembers: paidFees,
-            overdueFees,
-            pendingFees,
-            totalExpected,
-            totalCollected,
-            progress: totalFees > 0 ? Math.round((paidFees / totalFees) * 100) : 0,
-        };
-    }
+    constructor(
+        private prisma: PrismaService,
+        private mailService: MailService,
+        private campaignService: CampaignService,
+        private treasuryService: TreasuryService,
+        private paymentService: PaymentService,
+        private reportService: ReportService,
+    ) { }
 
-    // ── Helper: recursively collect all descendant association IDs ──
-    private async getAllDescendantIds(parentId: string): Promise<string[]> {
-        const children = await this.prisma.association.findMany({
-            where: { parentId },
-            select: { id: true },
-        });
-        const ids: string[] = [];
-        for (const child of children) {
-            ids.push(child.id);
-            const grandchildren = await this.getAllDescendantIds(child.id);
-            ids.push(...grandchildren);
-        }
-        return ids;
-    }
-
-    // ── CREATE CAMPAIGN + AUTO-GENERATE FEES ──
+    // ── DELEGATIONS ──
     async createCampaign(associationId: string, dto: CreateCampaignDto) {
-        const scope = dto.scope || 'LOCAL';
-
-        // 1. Create the campaign
-        const campaign = await this.prisma.campaign.create({
-            data: {
-                associationId,
-                name: dto.name,
-                amount: dto.amount,
-                description: dto.description || null,
-                due_date: new Date(dto.due_date),
-                scope,
-            },
-        });
-
-        let feesGenerated = 0;
-
-        if (scope === 'LOCAL') {
-            // Fetch all ACTIVE users of THIS association only
-            const activeUsers = await this.prisma.user.findMany({
-                where: { associationId, status: 'ACTIVE' },
-                select: { id: true },
-            });
-            if (activeUsers.length > 0) {
-                await this.prisma.fee.createMany({
-                    data: activeUsers.map((u) => ({
-                        userId: u.id,
-                        campaignId: campaign.id,
-                        status: 'PENDING',
-                    })),
-                });
-            }
-            feesGenerated = activeUsers.length;
-
-        } else if (scope === 'NETWORK_MEMBERS') {
-            // Fetch ALL descendants + self
-            const descendantIds = await this.getAllDescendantIds(associationId);
-            const allAssocIds = [associationId, ...descendantIds];
-
-            const activeUsers = await this.prisma.user.findMany({
-                where: {
-                    associationId: { in: allAssocIds },
-                    status: 'ACTIVE',
-                },
-                select: { id: true },
-            });
-            if (activeUsers.length > 0) {
-                await this.prisma.fee.createMany({
-                    data: activeUsers.map((u) => ({
-                        userId: u.id,
-                        campaignId: campaign.id,
-                        status: 'PENDING',
-                    })),
-                });
-            }
-            feesGenerated = activeUsers.length;
-
-        } else if (scope === 'NETWORK_BRANCHES') {
-            // Fetch direct child associations
-            const children = await this.prisma.association.findMany({
-                where: { parentId: associationId },
-                select: { id: true },
-            });
-            if (children.length > 0) {
-                await this.prisma.fee.createMany({
-                    data: children.map((c) => ({
-                        targetAssociationId: c.id,
-                        campaignId: campaign.id,
-                        status: 'PENDING',
-                    })),
-                });
-            }
-            feesGenerated = children.length;
-        }
-
-        return {
-            ...campaign,
-            feesGenerated,
-        };
+        return this.campaignService.createCampaign(associationId, dto);
     }
-
-    // ── LIST ALL CAMPAIGNS WITH STATS ──
     async findAllCampaigns(associationId: string) {
-        const campaigns = await this.prisma.campaign.findMany({
-            where: { associationId },
-            orderBy: { createdAt: 'desc' },
-            include: {
-                fees: {
-                    select: { status: true },
-                },
-            },
-        });
-
-        return campaigns.map((c) => ({
-            id: c.id,
-            name: c.name,
-            description: c.description,
-            amount: c.amount,
-            due_date: c.due_date,
-            scope: c.scope,
-            createdAt: c.createdAt,
-            ...this.computeCampaignStats(c),
-        }));
+        return this.campaignService.findAllCampaigns(associationId);
     }
-
-    // ── CAMPAIGN DETAIL WITH ALL FEES & MEMBER/BRANCH INFO ──
     async findOneCampaign(associationId: string, campaignId: string) {
-        const campaign = await this.prisma.campaign.findFirst({
-            where: { id: campaignId, associationId },
-            include: {
-                fees: {
-                    include: {
-                        user: {
-                            select: {
-                                id: true,
-                                firstName: true,
-                                lastName: true,
-                                email: true,
-                                role: true,
-                                status: true,
-                                association: {
-                                    select: { id: true, name: true },
-                                },
-                            },
-                        },
-                        targetAssociation: {
-                            select: {
-                                id: true,
-                                name: true,
-                                address_city: true,
-                                networkLevel: true,
-                            },
-                        },
-                    },
-                    orderBy: { createdAt: 'asc' },
-                },
-            },
-        });
-
-        if (!campaign) {
-            throw new NotFoundException('Campagne non trouvée.');
-        }
-
-        return {
-            id: campaign.id,
-            name: campaign.name,
-            description: campaign.description,
-            amount: campaign.amount,
-            due_date: campaign.due_date,
-            scope: campaign.scope,
-            createdAt: campaign.createdAt,
-            ...this.computeCampaignStats(campaign),
-            fees: campaign.fees.map((f) => ({
-                id: f.id,
-                status: f.status,
-                userId: f.userId,
-                user: f.user,
-                targetAssociationId: f.targetAssociationId,
-                targetAssociation: f.targetAssociation,
-                createdAt: f.createdAt,
-                updatedAt: f.updatedAt,
-            })),
-        };
+        return this.campaignService.findOneCampaign(associationId, campaignId);
+    }
+    async getTreasuryAccounts(associationId: string) {
+        return this.treasuryService.getAccounts(associationId);
+    }
+    async createTreasuryAccount(associationId: string, name: string, type: string, initialBalance = 0) {
+        return this.treasuryService.createAccount(associationId, name, type, initialBalance);
+    }
+    async createExpense(associationId: string, dto: CreateExpenseDto & { treasuryAccountId?: string }) {
+        return this.treasuryService.createExpense(associationId, dto);
+    }
+    async getLedger(associationId: string) {
+        return this.treasuryService.getLedger(associationId);
+    }
+    async getPaymentConfig(associationId: string) {
+        return this.paymentService.getPaymentConfig(associationId);
+    }
+    async updatePaymentConfig(associationId: string, dto: any) {
+        return this.paymentService.updatePaymentConfig(associationId, dto);
+    }
+    async triggerCron() {
+        this.logger.log("Manual trigger of Cron Jobs...");
+        await this.checkRecurringCampaigns();
+        await this.checkOverdueFees();
+        return { success: true, message: "Cron jobs triggered" };
+    }
+    async checkRecurringCampaigns() {
+        return this.campaignService.checkRecurringCampaigns();
+    }
+    async checkOverdueFees() {
+        return this.campaignService.checkOverdueFees();
     }
 
-    // ── PAY A FEE (MARK AS PAID + CREATE TRANSACTION) ──
-    async payFee(associationId: string, feeId: string, paymentMethod?: string) {
-        // 1. Find the fee and ensure it belongs to this association's campaign
-        const fee = await this.prisma.fee.findFirst({
-            where: { id: feeId },
-            include: {
-                campaign: {
-                    select: { associationId: true, name: true, amount: true },
-                },
-            },
-        });
-
-        if (!fee || fee.campaign.associationId !== associationId) {
-            throw new NotFoundException('Cotisation non trouvée.');
-        }
-
-        if (fee.status === 'PAID') {
-            throw new BadRequestException('Cette cotisation est déjà payée.');
-        }
-
-        // 2. Create transaction + update fee in a single atomic transaction
-        const result = await this.prisma.$transaction(async (tx) => {
-            const transaction = await tx.transaction.create({
-                data: {
-                    associationId,
-                    amount: fee.campaign.amount,
-                    type: 'INCOME',
-                    category: 'COTISATION',
-                    paymentMethod: paymentMethod || 'CASH',
-                    description: `Paiement — ${fee.campaign.name}`,
-                },
-            });
-
-            await tx.fee.update({
-                where: { id: feeId },
-                data: { status: 'PAID', transactionId: transaction.id },
-            });
-
-            return transaction;
-        });
-
-        return { success: true, feeId, transactionId: result.id };
+    // ── REPORTING DELEGATIONS (NEW) ──
+    async downloadReceipt(feeId: string, res: Response) {
+        return this.reportService.generateReceiptPdf(feeId, res);
     }
 
-    // ── GLOBAL FINANCE STATS ──
+    async downloadLedgerCsv(associationId: string, res: Response) {
+        return this.reportService.generateLedgerCsv(associationId, res);
+    }
+
+    // ── STATS & MEMBER SUMMARY ──
     async getGlobalStats(associationId: string) {
-        const campaigns = await this.prisma.campaign.findMany({
-            where: { associationId },
-            include: {
-                fees: { select: { status: true } },
-            },
+        const campaigns = await this.prisma.campaign.findMany({ where: { associationId } });
+        if (campaigns.length === 0) return { totalExpected: 0, totalCollected: 0, remaining: 0 };
+
+        const campaignIds = campaigns.map(c => c.id);
+        const feeStats = await this.prisma.fee.groupBy({
+            by: ['campaignId', 'status'],
+            where: { campaignId: { in: campaignIds } },
+            _count: { _all: true },
         });
 
         let totalExpected = 0;
         let totalCollected = 0;
+        const campaignMap = new Map(campaigns.map(c => [c.id, c.amount]));
 
-        for (const c of campaigns) {
-            const stats = this.computeCampaignStats(c);
-            totalExpected += stats.totalExpected;
-            totalCollected += stats.totalCollected;
+        for (const stat of feeStats) {
+            const amount = campaignMap.get(stat.campaignId) || 0;
+            const count = stat._count._all;
+            totalExpected += amount * count;
+            if (stat.status === 'PAID') totalCollected += amount * count;
         }
 
         return {
@@ -276,24 +104,36 @@ export class FinanceService {
         };
     }
 
-    // ── FEES FOR A SPECIFIC USER ──
+    async getMemberFinanceSummary(associationId: string) {
+        const campaigns = await this.prisma.campaign.findMany({ where: { associationId }, select: { id: true } });
+        const campaignIds = campaigns.map(c => c.id);
+        if (campaignIds.length === 0) return {};
+
+        const stats = await this.prisma.fee.groupBy({
+            by: ['userId', 'status'],
+            where: { campaignId: { in: campaignIds }, userId: { not: null } },
+            _count: { _all: true }
+        });
+
+        const result: Record<string, { total: number; paid: number; pending: number; overdue: number }> = {};
+        for (const s of stats) {
+            const userId = s.userId!;
+            if (!result[userId]) result[userId] = { total: 0, paid: 0, pending: 0, overdue: 0 };
+            const count = s._count._all;
+            result[userId].total += count;
+            if (s.status === 'PAID') result[userId].paid += count;
+            else if (s.status === 'OVERDUE') result[userId].overdue += count;
+            else result[userId].pending += count;
+        }
+        return result;
+    }
+
     async findFeesForUser(associationId: string, userId: string) {
         const fees = await this.prisma.fee.findMany({
             where: { userId },
-            include: {
-                campaign: {
-                    select: {
-                        associationId: true,
-                        name: true,
-                        amount: true,
-                        due_date: true,
-                    },
-                },
-            },
+            include: { campaign: { select: { associationId: true, name: true, amount: true, due_date: true } } },
             orderBy: { createdAt: 'desc' },
         });
-
-        // Only return fees whose campaign belongs to this association
         return fees
             .filter((f) => f.campaign.associationId === associationId)
             .map((f) => ({
@@ -306,89 +146,169 @@ export class FinanceService {
             }));
     }
 
-    // ── MEMBER FINANCE SUMMARY (for member list badges) ──
-    async getMemberFinanceSummary(associationId: string) {
-        const fees = await this.prisma.fee.findMany({
-            where: {
-                campaign: { associationId },
-                userId: { not: null },
-            },
-            select: {
-                userId: true,
-                status: true,
-            },
+    // ── PAY FEE (MANUAL) ──
+    async payFee(associationId: string, feeId: string, paymentMethod?: string, treasuryAccountId?: string) {
+        const fee = await this.prisma.fee.findUnique({
+            where: { id: feeId },
+            include: { campaign: true }
         });
 
-        // Group by userId
-        const summaryMap = new Map<string, { total: number; paid: number; pending: number; overdue: number }>();
+        if (!fee || fee.campaign.associationId !== associationId) throw new NotFoundException('Cotisation introuvable');
+        if (fee.status === 'PAID') throw new BadRequestException('Déjà payée');
 
-        for (const f of fees) {
-            if (!f.userId) continue;
-            const entry = summaryMap.get(f.userId) || { total: 0, paid: 0, pending: 0, overdue: 0 };
-            entry.total++;
-            if (f.status === 'PAID') entry.paid++;
-            else if (f.status === 'OVERDUE') entry.overdue++;
-            else entry.pending++;
-            summaryMap.set(f.userId, entry);
+        const result = await this.prisma.$transaction(async (tx) => {
+            let accountId = treasuryAccountId;
+            if (!accountId) {
+                const acc = await tx.treasuryAccount.findFirst({ where: { associationId, type: 'BANK' } })
+                    || await tx.treasuryAccount.findFirst({ where: { associationId } });
+                accountId = acc?.id;
+            }
+
+            const transaction = await tx.transaction.create({
+                data: {
+                    associationId,
+                    amount: fee.campaign.amount,
+                    type: 'INCOME',
+                    category: 'COTISATION',
+                    paymentMethod: paymentMethod || 'CASH',
+                    description: `Paiement — ${fee.campaign.name}`,
+                    treasuryAccountId: accountId,
+                }
+            });
+
+            if (accountId) {
+                await tx.treasuryAccount.update({
+                    where: { id: accountId },
+                    data: { balance: { increment: fee.campaign.amount } }
+                });
+            }
+
+            await tx.fee.update({
+                where: { id: feeId },
+                data: { status: 'PAID', transactionId: transaction.id }
+            });
+            return transaction;
+        });
+
+        return { success: true, feeId, transactionId: result.id };
+    }
+
+    // ── PAY FEE WITH WALLET ──
+    async payFeeWithWallet(userId: string, feeId: string) {
+        // ... (Logic kept same as previous step)
+        const fee = await this.prisma.fee.findUnique({ where: { id: feeId }, include: { campaign: true } });
+        if (!fee || fee.userId !== userId) throw new BadRequestException('Action non autorisée');
+        if (fee.status === 'PAID') throw new BadRequestException('Déjà payée');
+
+        const amount = fee.campaign.amount;
+
+        const result = await this.prisma.$transaction(async (tx) => {
+            const wallet = await tx.wallet.findUnique({ where: { userId } });
+            if (!wallet || wallet.balance < amount) throw new BadRequestException('Solde insuffisant');
+
+            await tx.wallet.update({ where: { userId }, data: { balance: { decrement: amount } } });
+            await tx.walletTransaction.create({
+                data: { walletId: wallet.id, amount: -amount, type: 'PAYMENT', status: 'COMPLETED', description: `Paiement: ${fee.campaign.name}`, feeId: fee.id }
+            });
+
+            let treasury = await tx.treasuryAccount.findFirst({ where: { associationId: fee.campaign.associationId, type: 'CASH' } });
+            if (!treasury) {
+                treasury = await tx.treasuryAccount.create({ data: { associationId: fee.campaign.associationId, name: 'Caisse Principale', type: 'CASH', balance: 0 } });
+            }
+
+            const assocTx = await tx.transaction.create({
+                data: {
+                    associationId: fee.campaign.associationId, amount, type: 'INCOME', category: 'COTISATION', paymentMethod: 'WALLET', description: `Wallet — ${fee.campaign.name}`, treasuryAccountId: treasury.id
+                }
+            });
+
+            await tx.treasuryAccount.update({ where: { id: treasury.id }, data: { balance: { increment: amount } } });
+            await tx.fee.update({ where: { id: fee.id }, data: { status: 'PAID', transactionId: assocTx.id } });
+
+            return { success: true, transactionId: assocTx.id, newBalance: wallet.balance - amount };
+        });
+
+        if (userId) {
+            const user = await this.prisma.user.findUnique({ where: { id: userId } });
+            if (user?.email) {
+                this.mailService.sendPaymentReceipt({ to: user.email, memberName: user.firstName, title: fee.campaign.name, amount, transactionId: result.transactionId, date: new Date() }).catch(e => this.logger.error("Failed receipt", e));
+            }
         }
+        return result;
+    }
 
-        // Convert to array
-        const result: Record<string, { total: number; paid: number; pending: number; overdue: number }> = {};
-        for (const [userId, entry] of summaryMap) {
-            result[userId] = entry;
+    // ── ASYNC PAYMENT FLOW (INITIATE) ──
+    async payFeeOnline(userId: string, feeId: string, dto: { provider: string; phoneNumber?: string }) {
+        const fee = await this.prisma.fee.findUnique({ where: { id: feeId }, include: { campaign: true, user: true } });
+        if (!fee || fee.userId !== userId) throw new BadRequestException('Action non autorisée');
+        if (fee.status === 'PAID') throw new BadRequestException('Déjà payée');
+        if (fee.status === 'PROCESSING') throw new BadRequestException('Paiement déjà en cours de traitement. Vérifiez vos SMS/Emails ou attendez quelques instants.');
+
+        // 1. Initiate Gateway Payment
+        const paymentReference = await this.paymentService.processPayment(
+            fee.campaign.associationId,
+            fee.campaign.amount,
+            `Fee: ${fee.campaign.name}`,
+            dto.provider,
+            dto.phoneNumber
+        );
+
+        // 2. Mark as PROCESSING (Async Flow)
+        // ...
+        await this.prisma.fee.update({
+            where: { id: feeId },
+            data: {
+                status: 'PROCESSING',
+                // Store reference somewhere if needed
+            }
+        });
+
+        // 3. (Mocking Webhook/Callback Delay - Auto Confirm for Demo)
+        const result = await this.prisma.$transaction(async (tx) => {
+            let treasury = await tx.treasuryAccount.findFirst({ where: { associationId: fee.campaign.associationId, type: 'BANK' } })
+                || await tx.treasuryAccount.findFirst({ where: { associationId: fee.campaign.associationId } });
+
+            if (!treasury) {
+                treasury = await tx.treasuryAccount.create({ data: { associationId: fee.campaign.associationId, name: "Compte (Défaut)", type: "BANK", balance: 0 } });
+            }
+
+            const txRecord = await tx.transaction.create({
+                data: {
+                    associationId: fee.campaign.associationId,
+                    amount: fee.campaign.amount,
+                    type: 'INCOME',
+                    category: 'COTISATION',
+                    paymentMethod: dto.provider,
+                    description: `Online (${dto.provider}) Ref: ${paymentReference}`,
+                    treasuryAccountId: treasury.id,
+                }
+            });
+
+            await tx.treasuryAccount.update({ where: { id: treasury.id }, data: { balance: { increment: fee.campaign.amount } } });
+
+            // Finalize Status
+            await tx.fee.update({ where: { id: feeId }, data: { status: 'PAID', transactionId: txRecord.id } });
+
+            return { success: true, transactionId: txRecord.id };
+        });
+
+        if (fee.user?.email) {
+            this.mailService.sendPaymentReceipt({
+                to: fee.user.email,
+                memberName: fee.user.firstName,
+                title: fee.campaign.name,
+                amount: fee.campaign.amount,
+                transactionId: result.transactionId,
+                date: new Date()
+            }).catch(e => this.logger.error("Failed receipt", e));
         }
 
         return result;
     }
 
-    // ── CREATE EXPENSE TRANSACTION ──
-    async createExpense(associationId: string, dto: CreateExpenseDto) {
-        const transaction = await this.prisma.transaction.create({
-            data: {
-                associationId,
-                amount: dto.amount,
-                type: 'EXPENSE',
-                category: dto.category || 'AUTRE',
-                paymentMethod: dto.paymentMethod || 'CASH',
-                date: dto.date ? new Date(dto.date) : new Date(),
-                description: dto.description || null,
-            },
-        });
-        return transaction;
-    }
-
-    // ── GET LEDGER (ALL TRANSACTIONS + BALANCE) ──
-    async getLedger(associationId: string) {
-        const transactions = await this.prisma.transaction.findMany({
-            where: { associationId },
-            orderBy: { date: 'desc' },
-        });
-
-        let totalIncome = 0;
-        let totalExpense = 0;
-
-        for (const t of transactions) {
-            if (t.type === 'INCOME') {
-                totalIncome += t.amount;
-            } else {
-                totalExpense += t.amount;
-            }
-        }
-
-        return {
-            currentBalance: totalIncome - totalExpense,
-            totalIncome,
-            totalExpense,
-            transactions: transactions.map((t) => ({
-                id: t.id,
-                date: t.date,
-                type: t.type,
-                category: t.category,
-                description: t.description,
-                amount: t.amount,
-                paymentMethod: t.paymentMethod,
-                createdAt: t.createdAt,
-            })),
-        };
+    // ── WEBHOOK HANDLER (NEW) ──
+    async handlePaymentWebhook(provider: string, payload: any) {
+        this.logger.log(`Received Webhook from ${provider}`, payload);
+        return { received: true };
     }
 }

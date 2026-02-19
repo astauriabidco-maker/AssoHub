@@ -3,4 +3,8 @@ export class CreateGroupDto {
     description?: string;
     leaderId?: string;
     memberIds?: string[];
+    // Hierarchy & Scope
+    parentId?: string;
+    scope?: string; // NATIONAL, BRANCH
+    attachedToId?: string;
 }

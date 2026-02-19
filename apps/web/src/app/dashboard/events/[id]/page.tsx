@@ -34,6 +34,9 @@ interface EventDetail {
     start_date: string;
     end_date: string | null;
     type: string;
+    is_paid: boolean;
+    price: number | null;
+    campaignId: string | null;
     createdAt: string;
     registrations: Registration[];
     documents: DocItem[];
@@ -113,7 +116,12 @@ export default function EventDetailPage() {
     async function handleRSVP(status: string) {
         setRsvpLoading(true);
         try {
-            await apiPost(`/events/${id}/register`, { status });
+            const res = await apiPost<{ feeId?: string; feeStatus?: string }>(`/events/${id}/register`, { status });
+            if (res.feeId && res.feeStatus !== 'PAID') {
+                if (confirm("Votre inscription est validée. Voulez-vous régler les frais maintenant ?")) {
+                    router.push("/dashboard/my-fees");
+                }
+            }
             await loadEvent();
         } catch { /* silent */ } finally {
             setRsvpLoading(false);
@@ -189,6 +197,11 @@ export default function EventDetailPage() {
                                 {isPast && (
                                     <span className="px-2 py-0.5 rounded-md text-[10px] bg-gray-500/20 text-gray-400 border border-gray-500/20">Terminé</span>
                                 )}
+                                {event.is_paid && event.price && (
+                                    <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-500/20 text-amber-400 border border-amber-500/20">
+                                        {event.price.toLocaleString()} FCFA
+                                    </span>
+                                )}
                             </div>
                             <h1 className="text-2xl font-bold text-white">{event.title}</h1>
                             {event.description && <p className="text-gray-400 text-sm mt-2 max-w-2xl">{event.description}</p>}
@@ -221,7 +234,7 @@ export default function EventDetailPage() {
                                     className={`flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-medium transition-all cursor-pointer border ${myReg?.status === "ATTENDING" ? "bg-emerald-500/20 border-emerald-500/30 text-emerald-400" : "bg-white/5 border-white/10 text-gray-300 hover:bg-emerald-500/10 hover:text-emerald-400 hover:border-emerald-500/20"}`}
                                 >
                                     {rsvpLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
-                                    Je participe
+                                    {event.is_paid ? "S'inscrire (Payant)" : "Je participe"}
                                 </button>
                                 <button
                                     onClick={() => handleRSVP("ABSENT")}

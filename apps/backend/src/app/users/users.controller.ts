@@ -8,7 +8,11 @@ import {
     Delete,
     Query,
     UseGuards,
+    Res,
+    Header,
+    Req,
 } from '@nestjs/common';
+import { Response, Request } from 'express';
 import { UsersService } from './users.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
@@ -34,6 +38,39 @@ export class UsersController {
             page ? parseInt(page, 10) : 1,
             limit ? Math.min(parseInt(limit, 10), 500) : 50,
         );
+    }
+
+    @Get('export/csv')
+    @Permissions('members.view')
+    async exportCsv(
+        @GetUser('associationId') associationId: string,
+        @Res() res: Response,
+    ) {
+        const csv = await this.usersService.exportCsv(associationId);
+        const date = new Date().toISOString().split('T')[0];
+        res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+        res.setHeader('Content-Disposition', `attachment; filename="membres_${date}.csv"`);
+        // BOM for Excel UTF-8 compatibility
+        res.send('\uFEFF' + csv);
+    }
+
+    @Get('export/template')
+    @Permissions('members.edit')
+    async exportTemplate(@Res() res: Response) {
+        const headers = 'prenom,nom,email,telephone,genre,role,ville_residence,pays_residence,branche_familiale,date_naissance,date_adhesion,parent1,parent2,conjoint';
+        const example = 'Jean,Dupont,jean@example.com,+237600000000,MALE,MEMBER,Douala,CM,Branche Pierre,1990-01-15,,Pierre Dupont,,Marie Dupont';
+        res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+        res.setHeader('Content-Disposition', 'attachment; filename="template_import.csv"');
+        res.send('\uFEFF' + headers + '\n' + example);
+    }
+
+    @Post('import/csv')
+    @Permissions('members.edit')
+    async importCsv(
+        @GetUser('associationId') associationId: string,
+        @Body('csv') csvContent: string,
+    ) {
+        return this.usersService.importCsv(associationId, csvContent);
     }
 
     @Post()
@@ -72,5 +109,16 @@ export class UsersController {
         @Param('id') id: string,
     ) {
         return this.usersService.remove(associationId, id);
+    }
+
+    @Post(':id/invite')
+    @Permissions('members.edit')
+    async sendInvitation(
+        @GetUser('associationId') associationId: string,
+        @Param('id') id: string,
+        @Req() req: Request,
+    ) {
+        const baseUrl = (req.headers.origin as string) || 'http://localhost:4200';
+        return this.usersService.sendInvitation(associationId, id, baseUrl);
     }
 }

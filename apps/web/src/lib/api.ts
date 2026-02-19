@@ -59,3 +59,25 @@ export function apiPatch<T>(
 export function apiDelete<T>(endpoint: string): Promise<T> {
     return request<T>(endpoint, { method: "DELETE" });
 }
+
+export async function apiGetBlob(endpoint: string, filename?: string): Promise<void> {
+    if (typeof window === "undefined") return;
+    const token = getToken();
+    const headers: Record<string, string> = {};
+    if (token) {
+        headers["Authorization"] = `Bearer ${token}`;
+    }
+
+    const response = await fetch(`${API_URL}${endpoint}`, { headers });
+    if (!response.ok) throw new Error("Erreur lors du téléchargement");
+
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    if (filename) a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+}

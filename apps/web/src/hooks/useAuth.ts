@@ -19,20 +19,22 @@ export interface AuthState {
     hasPermission: (...perms: string[]) => boolean;
     hasRole: (...roles: string[]) => boolean;
     isAdmin: boolean;
+    token: string | null;
     logout: () => void;
 }
 
 export function useAuth(): AuthState {
     const router = useRouter();
     const [user, setUser] = useState<AuthUser | null>(null);
+    const [token, setToken] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
         try {
-            const raw = localStorage.getItem("user");
-            if (raw) {
-                setUser(JSON.parse(raw));
-            }
+            const rawUser = localStorage.getItem("user");
+            const rawToken = localStorage.getItem("token");
+            if (rawUser) setUser(JSON.parse(rawUser));
+            if (rawToken) setToken(rawToken);
         } catch {
             // ignored
         } finally {
@@ -68,5 +70,5 @@ export function useAuth(): AuthState {
         router.push("/login");
     }
 
-    return { user, loading, permissions, hasPermission, hasRole, isAdmin, logout };
+    return { user, token, loading, permissions, hasPermission, hasRole, isAdmin, logout };
 }

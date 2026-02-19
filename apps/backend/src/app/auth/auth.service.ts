@@ -80,6 +80,19 @@ export class AuthService {
                 },
             });
 
+            // Create initial family branches if FAMILY type
+            if (associationType === 'FAMILY' && dto.branches && dto.branches.length > 0) {
+                for (const branch of dto.branches) {
+                    await tx.familyBranch.create({
+                        data: {
+                            associationId: association.id,
+                            name: branch.name,
+                            founderName: branch.founderName || null,
+                        },
+                    });
+                }
+            }
+
             return { association, user };
         });
 

@@ -236,6 +236,32 @@ export class DirectoryService {
         });
     }
 
+    // ── Get single user profile ──
+    async getProfile(associationId: string, userId: string) {
+        // Shared findById to ensure existence + params
+        const user = await this.usersService.findById(associationId, userId);
+        return {
+            id: user.id,
+            firstName: user.firstName,
+            lastName: user.lastName,
+            email: user.email,
+            phone: user.phone,
+            avatar_url: user.avatar_url,
+            residence_city: user.residence_city,
+            residence_country: user.residence_country,
+            professionalStatus: user.professionalStatus,
+            jobTitle: user.jobTitle,
+            industrySector: user.industrySector,
+            employer: user.employer,
+            educationLevel: user.educationLevel,
+            fieldOfStudy: user.fieldOfStudy,
+            availableForMentoring: user.availableForMentoring,
+            profileVisibility: user.profileVisibility,
+            role: user.role,
+            createdAt: user.createdAt,
+        };
+    }
+
     // ── Update professional profile ──
     async updateProfessionalProfile(
         associationId: string,

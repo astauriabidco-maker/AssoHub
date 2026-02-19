@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, type FormEvent } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
     ArrowLeft,
@@ -12,8 +12,14 @@ import {
     TrendingUp,
     Wallet,
     Building2,
+    Landmark,
+    CreditCard,
+    ChevronRight,
+    Plus,
 } from "lucide-react";
 import GlassCard from "@/components/ui/GlassCard";
+import GlassModal from "@/components/ui/GlassModal";
+import GlassButton from "@/components/ui/GlassButton";
 import RequirePermission from "@/components/auth/RequirePermission";
 import { apiGet, apiPatch } from "@/lib/api";
 import { useAuth } from "@/hooks/useAuth";
@@ -62,11 +68,27 @@ interface CampaignDetail {
     fees: Fee[];
 }
 
+interface TreasuryAccount {
+    id: string;
+    name: string;
+    type: string;
+    currency: string;
+    balance: number;
+}
+
 const SCOPE_LABELS: Record<string, { label: string; color: string }> = {
     LOCAL: { label: "Local", color: "#6366f1" },
     NETWORK_MEMBERS: { label: "Réseau (Membres)", color: "#3b82f6" },
     NETWORK_BRANCHES: { label: "Réseau (Antennes)", color: "#8b5cf6" },
 };
+
+const PAYMENT_METHODS = [
+    { value: "CASH", label: "💵 Espèces" },
+    { value: "BANK_TRANSFER", label: "🏦 Virement" },
+    { value: "MOBILE_MONEY", label: "📱 Mobile Money" },
+    { value: "CARD", label: "💳 Carte" },
+    { value: "OTHER", label: "🔄 Autre" },
+];
 
 function formatCurrency(n: number): string {
     return new Intl.NumberFormat("fr-FR", {
@@ -92,7 +114,18 @@ export default function CampaignDetailPage() {
 
     const [campaign, setCampaign] = useState<CampaignDetail | null>(null);
     const [loading, setLoading] = useState(true);
-    const [payingIds, setPayingIds] = useState<Set<string>>(new Set());
+
+    // Payment Modal State
+    const [selectedFeeId, setSelectedFeeId] = useState<string | null>(null);
+    const [paymentModalOpen, setPaymentModalOpen] = useState(false);
+    const [paymentLoading, setPaymentLoading] = useState(false);
+    const [paymentForm, setPaymentForm] = useState({
+        paymentMethod: "CASH",
+        treasuryAccountId: ""
+    });
+
+    // Treasury Accounts
+    const [accounts, setAccounts] = useState<TreasuryAccount[]>([]);
 
     const loadCampaign = useCallback(async () => {
         try {
@@ -107,46 +140,64 @@ export default function CampaignDetailPage() {
         }
     }, [campaignId]);
 
+    const loadTreasury = useCallback(async () => {
+        try {
+            const data = await apiGet<TreasuryAccount[]>("/finance/treasury-accounts");
+            setAccounts(data);
+            if (data.length > 0) {
+                setPaymentForm(p => ({ ...p, treasuryAccountId: data[0].id }));
+            }
+        } catch { /* silent */ }
+    }, []);
+
     useEffect(() => {
         loadCampaign();
-    }, [loadCampaign]);
+        loadTreasury();
+    }, [loadCampaign, loadTreasury]);
 
-    async function handlePay(feeId: string) {
-        if (payingIds.has(feeId)) return;
+    function openPaymentModal(feeId: string) {
+        setSelectedFeeId(feeId);
+        setPaymentModalOpen(true);
+    }
 
-        // Optimistic update
-        setPayingIds((prev) => new Set(prev).add(feeId));
-        setCampaign((prev) => {
-            if (!prev) return prev;
-            const updatedFees = prev.fees.map((f) =>
-                f.id === feeId ? { ...f, status: "PAID" } : f
-            );
-            const paidCount = updatedFees.filter(
-                (f) => f.status === "PAID"
-            ).length;
-            return {
-                ...prev,
-                fees: updatedFees,
-                paidMembers: paidCount,
-                totalCollected: paidCount * prev.amount,
-                progress:
-                    updatedFees.length > 0
-                        ? Math.round((paidCount / updatedFees.length) * 100)
-                        : 0,
-            };
-        });
+    async function handleConfirmPayment(e: FormEvent) {
+        e.preventDefault();
+        if (!selectedFeeId) return;
 
+        setPaymentLoading(true);
         try {
-            await apiPatch(`/finance/fees/${feeId}/pay`, {});
-        } catch {
-            // Revert on error
-            await loadCampaign();
-        } finally {
-            setPayingIds((prev) => {
-                const next = new Set(prev);
-                next.delete(feeId);
-                return next;
+            await apiPatch(`/finance/fees/${selectedFeeId}/pay`, {
+                paymentMethod: paymentForm.paymentMethod,
+                treasuryAccountId: paymentForm.treasuryAccountId || undefined
             });
+
+            // Optimistic update or reload
+            setCampaign((prev) => {
+                if (!prev) return prev;
+                const updatedFees = prev.fees.map((f) =>
+                    f.id === selectedFeeId ? { ...f, status: "PAID" } : f
+                );
+                const paidCount = updatedFees.filter(
+                    (f) => f.status === "PAID"
+                ).length;
+                return {
+                    ...prev,
+                    fees: updatedFees,
+                    paidMembers: paidCount,
+                    totalCollected: paidCount * prev.amount,
+                    progress:
+                        updatedFees.length > 0
+                            ? Math.round((paidCount / updatedFees.length) * 100)
+                            : 0,
+                };
+            });
+            setPaymentModalOpen(false);
+        } catch (err) {
+            console.error(err);
+            await loadCampaign(); // Revert on error
+        } finally {
+            setPaymentLoading(false);
+            setSelectedFeeId(null);
         }
     }
 
@@ -332,7 +383,7 @@ export default function CampaignDetailPage() {
                             <tbody>
                                 {campaign.fees.map((fee) => {
                                     const isPaid = fee.status === "PAID";
-                                    const isPaying = payingIds.has(fee.id);
+                                    const isPaying = selectedFeeId === fee.id && paymentLoading;
 
                                     // Determine display based on fee type
                                     let displayName = "";
@@ -424,20 +475,12 @@ export default function CampaignDetailPage() {
                                                 <td className="px-5 py-3.5 text-right">
                                                     {!isPaid ? (
                                                         <button
-                                                            onClick={() =>
-                                                                handlePay(
-                                                                    fee.id
-                                                                )
-                                                            }
+                                                            onClick={() => openPaymentModal(fee.id)}
                                                             disabled={isPaying}
                                                             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/30 transition-all duration-200 text-xs font-medium cursor-pointer disabled:opacity-50"
                                                         >
-                                                            {isPaying ? (
-                                                                <div className="w-3 h-3 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin" />
-                                                            ) : (
-                                                                <CheckCircle2 className="w-3.5 h-3.5" />
-                                                            )}
-                                                            Valider le paiement
+                                                            <CheckCircle2 className="w-3.5 h-3.5" />
+                                                            Valider
                                                         </button>
                                                     ) : (
                                                         <span className="text-xs text-gray-500">
@@ -453,6 +496,64 @@ export default function CampaignDetailPage() {
                         </table>
                     </div>
                 </GlassCard>
+
+                {/* ── Payment Validation Modal ── */}
+                <GlassModal open={paymentModalOpen} onClose={() => setPaymentModalOpen(false)} title="Valider un paiement">
+                    <form onSubmit={handleConfirmPayment} className="space-y-4">
+                        <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-3">
+                            <p className="text-xs text-blue-300">
+                                Vous êtes sur le point de valider un paiement de <strong>{formatCurrency(campaign.amount)}</strong>.
+                            </p>
+                        </div>
+
+                        {/* Treasury Account Select */}
+                        <div>
+                            <label className="block text-xs font-medium text-gray-300 mb-1.5">Compte à créditer</label>
+                            <div className="relative">
+                                <select
+                                    value={paymentForm.treasuryAccountId}
+                                    onChange={(e) => setPaymentForm((p) => ({ ...p, treasuryAccountId: e.target.value }))}
+                                    className="w-full bg-white/5 border border-white/10 rounded-xl py-2.5 px-4 text-white text-sm focus:outline-none focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/30 transition-all appearance-none cursor-pointer"
+                                    style={{ WebkitAppearance: "none" }}
+                                >
+                                    <option value="" className="bg-gray-900 text-gray-400">-- Aucun (Transaction simple) --</option>
+                                    {accounts.map((acc) => (
+                                        <option key={acc.id} value={acc.id} className="bg-gray-900 text-white">
+                                            {acc.name} ({formatCurrency(acc.balance)})
+                                        </option>
+                                    ))}
+                                </select>
+                                <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none"><ChevronRight className="w-4 h-4 text-gray-400 rotate-90" /></div>
+                            </div>
+                        </div>
+
+                        {/* Payment method select */}
+                        <div>
+                            <label className="block text-xs font-medium text-gray-300 mb-1.5">Méthode de paiement</label>
+                            <div className="relative">
+                                <select
+                                    value={paymentForm.paymentMethod}
+                                    onChange={(e) => setPaymentForm((p) => ({ ...p, paymentMethod: e.target.value }))}
+                                    className="w-full bg-white/5 border border-white/10 rounded-xl py-2.5 px-4 text-white text-sm focus:outline-none focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/30 transition-all appearance-none cursor-pointer"
+                                    style={{ WebkitAppearance: "none" }}
+                                >
+                                    {PAYMENT_METHODS.map((m) => (
+                                        <option key={m.value} value={m.value} className="bg-gray-900 text-white">
+                                            {m.label}
+                                        </option>
+                                    ))}
+                                </select>
+                                <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none"><ChevronRight className="w-4 h-4 text-gray-400 rotate-90" /></div>
+                            </div>
+                        </div>
+
+                        <div className="pt-2">
+                            <GlassButton type="submit" isLoading={paymentLoading} icon={<Plus className="w-4 h-4" />}>
+                                Confirm Payment
+                            </GlassButton>
+                        </div>
+                    </form>
+                </GlassModal>
             </div>
         </RequirePermission>
     );

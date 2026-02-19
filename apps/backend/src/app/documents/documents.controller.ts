@@ -43,8 +43,9 @@ export class DocumentsController {
         @UploadedFile() file: Express.Multer.File,
         @Body('category') category: string,
         @Body('eventId') eventId?: string,
+        @Body('groupId') groupId?: string,
     ) {
-        return this.documentsService.create(associationId, file, category, eventId);
+        return this.documentsService.create(associationId, file, category, eventId, groupId);
     }
 
     @Get()

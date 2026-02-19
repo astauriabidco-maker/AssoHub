@@ -51,9 +51,13 @@ model Association {
   events        Event[]
   documents     Document[]
   announcements Announcement[]
-  branchFees    Fee[]          @relation("BranchFees")
-  familyLinks   FamilyLink[]
-  skills        Skill[]
+  branchFees         Fee[]              @relation("BranchFees")
+  familyLinks        FamilyLink[]
+  skills             Skill[]
+  secondaryMembers   UserAssociation[]  @relation("SecondaryMembers")
+  branches           FamilyBranch[]
+  treasuryAccounts   TreasuryAccount[]
+  paymentConfig      PaymentConfig?
 }
 
 // ─────────────────────────────────────────────────
@@ -96,7 +100,9 @@ model User {
   // Enriched profile
   residence_city    String?   // Ville de résidence actuelle
   residence_country String?   // Pays de résidence (CM, FR, BE, CA...)
-  family_branch     String?   // Concession / branche familiale (contexte FAMILY)
+  family_branch     String?   // Concession / branche familiale (legacy text)
+  familyBranchId    String?   // FK vers FamilyBranch structuré
+  familyBranch      FamilyBranch? @relation(fields: [familyBranchId], references: [id])
   birth_date        DateTime? // Date de naissance
   membership_date   DateTime? // Date d'adhésion officielle
 
@@ -115,6 +121,10 @@ model User {
   availableForMentoring Boolean   @default(false)
   profileVisibility     String    @default("MEMBERS") // PRIVATE, MEMBERS, PUBLIC
 
+  // Invitation
+  invitation_token   String?   @unique
+  invitation_expires DateTime?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -129,6 +139,10 @@ model User {
   familyLinksTo      FamilyLink[]    @relation("FamilyLinksTo")
   skills             UserSkill[]
   wallet             Wallet?
+  secondaryAssociations UserAssociation[]
+  commissionAssignments CommissionObjective[]
+  notifications      Notification[]
+
 
 
   @@unique([email, associationId])
@@ -216,6 +230,39 @@ model Group {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  // Hierarchy (Sub-commissions)
+  parentId    String?
+  parent      Group?   @relation("GroupHierarchy", fields: [parentId], references: [id])
+  children    Group[]  @relation("GroupHierarchy")
+
+  // Attachment (National vs Branch)
+  scope         String   @default("NATIONAL") // NATIONAL, BRANCH
+  attachedToId  String?  // If BRANCH, specific Association ID (can match associationId or be a child)
+
+  objectives CommissionObjective[]
+  documents  Document[]
+}
+
+// ─────────────────────────────────────────────────
+// OBJECTIVES (Feuille de route Commission)
+// ─────────────────────────────────────────────────
+model CommissionObjective {
+  id          String   @id @default(uuid())
+  groupId     String
+  group       Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  
+  title       String
+  description String?
+  
+  dueDate     DateTime?
+  status      String   @default("PENDING") // PENDING, IN_PROGRESS, DONE, CANCELLED
+  
+  assignedToId String?
+  assignedTo   User?    @relation(fields: [assignedToId], references: [id])
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }
 
 // ─────────────────────────────────────────────────
@@ -235,9 +282,15 @@ model Campaign {
   scope         String   @default("LOCAL")
 
   fees Fee[]
+  events Event[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  // Automation
+  frequency   String            @default("ONETIME") // ONETIME, MONTHLY, QUARTERLY, YEARLY
+  nextRunAt   DateTime?
+  isActive    Boolean           @default(true)
 }
 
 // ─────────────────────────────────────────────────
@@ -268,6 +321,25 @@ model Fee {
 }
 
 // ─────────────────────────────────────────────────
+// TREASURY ACCOUNTS
+// ─────────────────────────────────────────────────
+model TreasuryAccount {
+  id            String      @id @default(uuid())
+  associationId String
+  association   Association @relation(fields: [associationId], references: [id])
+
+  name          String      // "Caisse Principale", "Compte BOA"
+  type          String      @default("CASH") // CASH, BANK, MOBILE_MONEY, OTHER
+  currency      String      @default("XAF")
+  balance       Float       @default(0.0)
+
+  transactions  Transaction[]
+
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+}
+
+// ─────────────────────────────────────────────────
 // 7. TRANSACTION (Livre de compte)
 // ─────────────────────────────────────────────────
 model Transaction {
@@ -290,6 +362,10 @@ model Transaction {
   proofDocumentId String?   @unique
   proofDocument   Document? @relation(fields: [proofDocumentId], references: [id])
 
+  // Treasury Link
+  treasuryAccountId String?
+  treasuryAccount   TreasuryAccount? @relation(fields: [treasuryAccountId], references: [id])
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
@@ -311,6 +387,20 @@ model Event {
   type        String   @default("MEETING")
   is_paid     Boolean   @default(false)
   price       Float?
+
+  // Recurrence
+  recurrenceType String   @default("NONE") // NONE, WEEKLY, MONTHLY, YEARLY
+  recurrenceEnd  DateTime?
+  parentId       String?
+  parent         Event?   @relation("EventRecurrence", fields: [parentId], references: [id])
+  children       Event[]  @relation("EventRecurrence")
+
+  // Notification
+  reminderSent   Boolean  @default(false)
+  reminderTime   Int?     // Minutes before event (e.g. 1440 = 24h)
+
+  campaignId String?
+  campaign  Campaign? @relation(fields: [campaignId], references: [id])
 
   registrations EventRegistration[]
   documents     Document[]
@@ -357,6 +447,10 @@ model Document {
   // Optional link to an event (e.g. minutes for an AG)
   eventId      String?
   event        Event? @relation(fields: [eventId], references: [id])
+
+  // Optional link to a group/commission (e.g. working docs)
+  groupId      String?
+  group        Group? @relation(fields: [groupId], references: [id])
 
   transaction Transaction?
 
@@ -423,4 +517,73 @@ model WalletTransaction {
   feeId         String?
   
   createdAt     DateTime    @default(now())
+}
+
+// ─────────────────────────────────────────────────
+// 14. USER ASSOCIATION (Multi-Appartenance)
+// ─────────────────────────────────────────────────
+model UserAssociation {
+  id              String      @id @default(uuid())
+  userId          String
+  user            User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  associationId   String
+  association     Association @relation("SecondaryMembers", fields: [associationId], references: [id], onDelete: Cascade)
+  role            String      @default("MEMBER")
+  joinedAt        DateTime    @default(now())
+
+  @@unique([userId, associationId])
+}
+
+// ─────────────────────────────────────────────────
+// 15. FAMILY BRANCH (Branches familiales structurées)
+// ─────────────────────────────────────────────────
+model FamilyBranch {
+  id              String      @id @default(uuid())
+  name            String      // "Branche Pierre Nounga"
+  founderName     String?     // Nom du fondateur / patriarche
+  description     String?
+  associationId   String
+  association     Association @relation(fields: [associationId], references: [id], onDelete: Cascade)
+  members         User[]
+  createdAt       DateTime    @default(now())
+}
+
+// ─────────────────────────────────────────────────
+// 16. NOTIFICATION
+// ─────────────────────────────────────────────────
+model Notification {
+  id            String   @id @default(uuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id])
+  
+  title         String
+  message       String
+  type          String   @default("INFO") // INFO, SUCCESS, WARNING, ERROR, ASSIGNMENT, OBJECTIVE, DOCUMENT
+  
+  read          Boolean  @default(false)
+  readAt        DateTime?
+  
+  // Optional link or metadata
+  link          String?  // URL to redirect
+  metadata      String?  // JSON for extra data (e.g. entityId)
+
+  createdAt     DateTime @default(now())
+}
+
+// ─────────────────────────────────────────────────
+// 17. PAYMENT CONFIGURATION
+// ─────────────────────────────────────────────────
+model PaymentConfig {
+  id            String      @id @default(uuid())
+  associationId String      @unique
+  association   Association @relation(fields: [associationId], references: [id])
+  
+  // Provider: STRIPE, ORANGE_MONEY, MTNC, MANUAL
+  provider      String      @default("MANUAL")
+  publicKey     String?     // API Key / Client ID
+  secretKey     String?     // Secret Key
+  isEnabled     Boolean     @default(false)
+  
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
 }
